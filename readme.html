@@ -1,0 +1,173 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.19: https://docutils.sourceforge.io/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OCSMesh &mdash; ocsmesh 0.1.dev1+gaccd037c2 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css" />
+
+  
+      <script src="_static/jquery.js"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js"></script>
+      <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
+      <script src="_static/doctools.js"></script>
+      <script src="_static/sphinx_highlight.js"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            ocsmesh
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+<li class="toctree-l1"><a class="reference internal" href="ocsmesh.geometry.html">Domain definition</a></li>
+<li class="toctree-l1"><a class="reference internal" href="ocsmesh.size_function.html">Mesh size definition</a></li>
+<li class="toctree-l1"><a class="reference internal" href="ocsmesh.mesh.html">Mesh representation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="ocsmesh.utilities.html">Utility classes and functions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="ocsmesh.command_line.html">Command line interface</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">ocsmesh</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">OCSMesh</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/readme.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <a class="reference external image-reference" href="https://github.com/noaa-ocs-modeling/OCSMesh/actions/workflows/pylint.yml/badge.svg?branch=main"><img alt="lint workflow" src="https://github.com/noaa-ocs-modeling/OCSMesh/actions/workflows/pylint.yml/badge.svg?branch=main" /></a>
+<a class="reference external image-reference" href="https://github.com/noaa-ocs-modeling/OCSMesh/actions/workflows/functional_test.yml/badge.svg?branch=main"><img alt="fnc workflow" src="https://github.com/noaa-ocs-modeling/OCSMesh/actions/workflows/functional_test.yml/badge.svg?branch=main" /></a>
+<section id="ocsmesh">
+<h1>OCSMesh<a class="headerlink" href="#ocsmesh" title="Permalink to this heading"></a></h1>
+<p>OCSMesh is a Python package for processing DEM data into georeferenced
+unstructured meshes using different meshing engine libraries.</p>
+<section id="installation">
+<h2>Installation<a class="headerlink" href="#installation" title="Permalink to this heading"></a></h2>
+<p>Two ways of installing OCSMesh are described below:</p>
+<section id="using-conda">
+<h3>Using <code class="docutils literal notranslate"><span class="pre">conda</span></code><a class="headerlink" href="#using-conda" title="Permalink to this heading"></a></h3>
+<p>The recommended way to setup the environment for installing OCSMesh is to
+use <cite>``conda`</cite> &lt;<a class="reference external" href="https://docs.conda.io/en/latest/miniconda.html#linux-installers">https://docs.conda.io/en/latest/miniconda.html#linux-installers</a>&gt;`_
+with the <code class="docutils literal notranslate"><span class="pre">environment.yml</span></code> file provided in the repo to install
+required libraries.</p>
+<p>You need to make sure you’ve installed the mesh engine you’d like to
+use (e.g., Triangle or Gmsh).</p>
+<p>First you need to download the <code class="docutils literal notranslate"><span class="pre">environment.yml</span></code> file.</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">wget</span> <span class="n">https</span><span class="p">:</span><span class="o">//</span><span class="n">raw</span><span class="o">.</span><span class="n">githubusercontent</span><span class="o">.</span><span class="n">com</span><span class="o">/</span><span class="n">noaa</span><span class="o">-</span><span class="n">ocs</span><span class="o">-</span><span class="n">modeling</span><span class="o">/</span><span class="n">OCSMesh</span><span class="o">/</span><span class="n">main</span><span class="o">/</span><span class="n">environment</span><span class="o">.</span><span class="n">yml</span>
+
+<span class="n">conda</span> <span class="n">env</span> <span class="n">create</span> <span class="o">-</span><span class="n">f</span> <span class="n">environment</span><span class="o">.</span><span class="n">yml</span> <span class="o">-</span><span class="n">n</span> <span class="n">your</span><span class="o">-</span><span class="n">env</span><span class="o">-</span><span class="n">name</span>
+<span class="n">conda</span> <span class="n">activate</span> <span class="n">your</span><span class="o">-</span><span class="n">env</span><span class="o">-</span><span class="n">name</span>
+
+<span class="n">pip</span> <span class="n">install</span> <span class="n">ocsmesh</span>
+</pre></div>
+</div>
+</section>
+<section id="from-github-repo">
+<h3>From GitHub repo<a class="headerlink" href="#from-github-repo" title="Permalink to this heading"></a></h3>
+<p>You need to make sure you’ve installed the mesh engine you’d like to
+use (e.g., Triangle or Gmsh).</p>
+<p>OCSMesh can be installed from the GitHub repository as follows:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">git</span> <span class="n">clone</span> <span class="n">https</span><span class="p">:</span><span class="o">//</span><span class="n">github</span><span class="o">.</span><span class="n">com</span><span class="o">/</span><span class="n">noaa</span><span class="o">-</span><span class="n">ocs</span><span class="o">-</span><span class="n">modeling</span><span class="o">/</span><span class="n">ocsmesh</span>
+<span class="n">cd</span> <span class="n">ocsmesh</span>
+<span class="n">pip</span> <span class="n">install</span> <span class="o">.</span><span class="p">[</span><span class="nb">all</span><span class="p">]</span>
+</pre></div>
+</div>
+</section>
+<section id="requirements">
+<h3>Requirements<a class="headerlink" href="#requirements" title="Permalink to this heading"></a></h3>
+<ul class="simple">
+<li><p>3.10 &lt;= Python</p></li>
+<li><p>CMake</p></li>
+<li><p>C/C++ compilers</p></li>
+</ul>
+</section>
+</section>
+</section>
+<section id="how-to-cite">
+<h1>How to Cite<a class="headerlink" href="#how-to-cite" title="Permalink to this heading"></a></h1>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>Title : OCSMesh: a data-driven automated unstructured mesh generation software for coastal ocean modeling
+Personal Author(s) : Mani, Soroosh;Calzada, Jaime R.;Moghimi, Saeed;Zhang, Y. Joseph;Myers, Edward;Pe’eri, Shachak;
+Corporate Authors(s) : Coast Survey Development Laboratory (U.S.)
+Published Date : 2021
+Series : NOAA Technical Memorandum NOS CS ; 47
+DOI : https://doi.org/10.25923/csba-m072
+</pre></div>
+</div>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">Title</span> <span class="p">:</span> <span class="n">OCSMesh</span> <span class="ow">and</span> <span class="n">an</span> <span class="n">end</span><span class="o">-</span><span class="n">to</span><span class="o">-</span><span class="n">end</span> <span class="n">workflow</span> <span class="k">for</span> <span class="n">fully</span> <span class="n">automatic</span> <span class="n">mesh</span> <span class="n">generation</span> <span class="k">with</span> <span class="n">application</span> <span class="n">to</span> <span class="n">compound</span> <span class="n">flood</span> <span class="n">studies</span>
+<span class="n">Personal</span> <span class="n">Author</span><span class="p">(</span><span class="n">s</span><span class="p">)</span> <span class="p">:</span> <span class="n">Cassalho</span><span class="p">,</span> <span class="n">Felicio</span><span class="p">;</span><span class="n">Mani</span><span class="p">,</span> <span class="n">Soroosh</span><span class="p">;</span><span class="n">Ye</span><span class="p">,</span> <span class="n">Fei</span><span class="p">;</span><span class="n">Zhang</span><span class="p">,</span> <span class="n">Y</span><span class="o">.</span> <span class="n">Joseph</span><span class="p">;</span><span class="n">Moghimi</span><span class="p">,</span> <span class="n">Saeed</span><span class="p">;</span>
+<span class="n">Published</span> <span class="n">Date</span> <span class="p">:</span> <span class="n">Pre</span><span class="o">-</span><span class="nb">print</span><span class="p">(</span><span class="mi">2025</span><span class="p">)</span>
+<span class="n">DOI</span> <span class="p">:</span> <span class="n">http</span><span class="p">:</span><span class="o">//</span><span class="n">dx</span><span class="o">.</span><span class="n">doi</span><span class="o">.</span><span class="n">org</span><span class="o">/</span><span class="mf">10.2139</span><span class="o">/</span><span class="n">ssrn</span><span class="mf">.5226658</span>
+</pre></div>
+</div>
+</section>
+<section id="disclaimer">
+<h1>Disclaimer<a class="headerlink" href="#disclaimer" title="Permalink to this heading"></a></h1>
+<p>This repository is a scientific product and is not official communication of the National Oceanic and Atmospheric Administration, or the United States Department of Commerce. All NOAA GitHub project code is provided on an “as is” basis and the user assumes responsibility for its use. Any claims against the Department of Commerce or Department of Commerce bureaus stemming from the use of this GitHub project will be governed by all applicable Federal law. Any reference to specific commercial products, processes, or services by service mark, trademark, manufacturer, or otherwise, does not constitute or imply their endorsement, recommendation or favoring by the Department of Commerce. The Department of Commerce seal and logo, or the seal and logo of a DOC bureau, shall not be used in any manner to imply endorsement of any commercial product or activity by DOC or the United States Government.</p>
+</section>
+
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, Office of Coast Survey (OCS), National Oceanic and Atmospheric Administration (NOAA).</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
