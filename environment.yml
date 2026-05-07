@@ -16,7 +16,7 @@ dependencies:
   - utm
   - scipy
   - numba
-  - numpy>=1.21 # numpy.typing
+  - numpy==2.3.5 # numpy.typing
   - matplotlib>=3.8
   - mpi4py
   - pyarrow
