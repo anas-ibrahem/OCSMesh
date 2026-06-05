@@ -1611,6 +1611,59 @@ class HfunCollector(BaseHfun):
 
         self._applied = True
 
+    def _make_parallel_task(
+        self,
+        hfun: HfunRaster,
+        in_idx: int,
+        name_prefix: str,
+        **extra_kwargs
+    ) -> dict:
+        """Internal: helper to build a standard pickleable task dictionary."""
+        hfun_input_path = hfun.tmpfile
+        topo_input_path = hfun._raster.path  # pylint: disable=W0212
+        output_path = os.path.join(
+            self._work_dir, f"{name_prefix}_result_{in_idx}.tif")
+
+        task = {
+            'original_index': in_idx,
+            'hfun_input_path': hfun_input_path,
+            'topo_input_path': topo_input_path,
+            'output_path': output_path,
+            'global_hmin': hfun._hmin,  # pylint: disable=W0212
+            'global_hmax': hfun._hmax,  # pylint: disable=W0212
+        }
+        task.update(extra_kwargs)
+        return task
+
+
+    def _integrate_parallel_results(self, results: list, name_prefix: str) -> None:
+        """Internal: helper to integrate parallel worker results back into self._hfun_list."""
+        new_hfun_objects = {}
+        for result in results:
+            if result['status'] == 'error':
+                _logger.error(
+                    f"{name_prefix} worker {result['original_index']} failed: {result['error']}"
+                )
+                continue
+
+            idx = result['original_index']
+            output_path = result['output_path']
+            original_hfun = self._hfun_list[idx]
+
+            new_hfun_objects[idx] = HfunRaster(
+                raster=original_hfun.raster,
+                hmin=original_hfun.hmin,
+                hmax=original_hfun.hmax,
+                verbosity=original_hfun.verbosity,
+                initial_value=output_path
+            )
+
+        for idx, new_hfun in new_hfun_objects.items():
+            _logger.info(
+                f"Updating HfunCollector with {name_prefix} result at idx {idx}."
+            )
+            self._hfun_list[idx] = new_hfun
+
 
     def _apply_constraints(self) -> None:
         """Internal: dispatch constraint application to serial or parallel.
@@ -1715,28 +1768,13 @@ class HfunCollector(BaseHfun):
                     'constraints': constraint_list
                 }
 
-
-        # Same style as other functions 
-        # (Can be refactored to be a shared function that 
-        # accept needed parameters to make code cleaner)
-        # in another PR
         for in_idx, data in hfuns_to_process.items():
-            hfun = data['hfun']
-            hfun_input_path = hfun.tmpfile
-            topo_input_path = hfun._raster.path  # pylint: disable=W0212
-
-            output_path = os.path.join(
-                self._work_dir, f"constraints_result_{in_idx}.tif")
-
-            task = {
-                'original_index': in_idx,
-                'hfun_input_path': hfun_input_path,
-                'topo_input_path': topo_input_path,
-                'output_path': output_path,
-                'global_hmin': hfun._hmin,   # pylint: disable=W0212
-                'global_hmax': hfun._hmax,   # pylint: disable=W0212
-                'constraint_list': data['constraints']
-            }
+            task = self._make_parallel_task(
+                data['hfun'],
+                in_idx,
+                'constraints',
+                constraint_list=data['constraints']
+            )
             tasks.append(task)
 
         if not tasks:
@@ -1750,36 +1788,8 @@ class HfunCollector(BaseHfun):
             results = p.map(_constraints_task_worker, tasks)
         _logger.info("Parallel execution finished.")
 
-        # Same style as other functions 
-        # (Can be refactored to be a shared function that 
-        # accept needed parameters to make code cleaner)
-        # in another PR
         # Phase 3: INTEGRATION
-        new_hfun_objects = {}
-        for result in results:
-            if result['status'] == 'error':
-                _logger.error(
-                    "Constraint worker %s failed: %s",
-                    result['original_index'],
-                    result['error'])
-                continue
-
-            idx = result['original_index']
-            output_path = result['output_path']
-            original_hfun = self._hfun_list[idx]
-
-            new_hfun_objects[idx] = HfunRaster(
-                raster=original_hfun.raster,
-                hmin=original_hfun.hmin,
-                hmax=original_hfun.hmax,
-                verbosity=original_hfun.verbosity,
-                initial_value=output_path
-            )
-
-        for idx, new_hfun in new_hfun_objects.items():
-            _logger.info(
-                f"Updating HfunCollector with constraint result at idx {idx}.")
-            self._hfun_list[idx] = new_hfun
+        self._integrate_parallel_results(results, "constraints")
 
 
     def _apply_contours(self, apply_to: Optional[SizeFuncList] = None) -> None:
@@ -2037,30 +2047,12 @@ class HfunCollector(BaseHfun):
 
         # Now, create the simple task dictionaries that can be sent to the pool.
         for in_idx, data in hfuns_to_process.items():
-            hfun = data['hfun']
-
-            # Determine the correct input file. If this raster was already processed
-            # by another step (e.g., _apply_constraints), use that output file.
-            # Otherwise, use the original hfun path.
-            hfun_input_path = hfun.tmpfile
-
-
-            # The path to the original, unmodified topography/DEM data.
-            topo_input_path = hfun._raster.path # pylint: disable=W0212
-
-            # Define a unique output path in our persistent working directory.
-            output_path = os.path.join(self._work_dir,
-                                       f"flow_limiter_result_{in_idx}.tif")
-
-            task = {
-                'original_index': in_idx,
-                'hfun_input_path': hfun_input_path,
-                'topo_input_path': topo_input_path,
-                'output_path': output_path,
-                'global_hmin': hfun._hmin, # pylint: disable=W0212
-                'global_hmax': hfun._hmax, # pylint: disable=W0212
-                'limiter_params': data['rules']
-            }
+            task = self._make_parallel_task(
+                data['hfun'],
+                in_idx,
+                'flow_limiter',
+                limiter_params=data['rules']
+            )
             tasks.append(task)
 
 
@@ -2082,31 +2074,7 @@ class HfunCollector(BaseHfun):
         # This phase takes the results from the workers (which are just file paths)
         # and updates the main HfunCollector's state with the new, processed data.
 
-        new_hfun_objects = {}
-        for result in results:
-            if result['status'] == 'error':
-                _logger.error(
-                    f"Worker failed for HfunRaster at index "
-                    f"{result['original_index']}: {result['error']}"
-                )
-                continue
-
-            idx = result['original_index']
-            output_path = result['output_path']
-            original_hfun = self._hfun_list[idx]
-            # Create a new, updated HfunRaster instance to replace the old one.
-            new_hfun_objects[idx] = HfunRaster(
-                raster=original_hfun.raster,
-                hmin=original_hfun.hmin,
-                hmax=original_hfun.hmax,
-                verbosity=original_hfun.verbosity,
-                initial_value=output_path
-            )
-
-        # Finally, update the main list with the new objects.
-        for idx, new_hfun in new_hfun_objects.items():
-            _logger.info(f"Updating HfunCol. state with processed raster for idx {idx}.")
-            self._hfun_list[idx] = new_hfun
+        self._integrate_parallel_results(results, "flow_limiter")
 
 
     def _apply_const_val(self) -> None:
@@ -2199,23 +2167,12 @@ class HfunCollector(BaseHfun):
 
         # Now, create the simple task dictionaries for the pool.
         for in_idx, data in hfuns_to_process.items():
-            hfun = data['hfun']
-            # Determine the correct input file.If this raster was already processed
-            hfun_input_path = hfun.tmpfile
-            topo_input_path = hfun._raster.path # pylint: disable=W0212
-
-            output_path = os.path.join(self._work_dir,
-                                       f"const_val_result_{in_idx}.tif")
-
-            task = {
-                'original_index': in_idx,
-                'hfun_input_path': hfun_input_path,
-                'topo_input_path': topo_input_path,
-                'output_path': output_path,
-                'global_hmin': hfun._hmin, # pylint: disable=W0212
-                'global_hmax': hfun._hmax, # pylint: disable=W0212
-                'const_val_rules': data['rules']
-            }
+            task = self._make_parallel_task(
+                data['hfun'],
+                in_idx,
+                'const_val',
+                const_val_rules=data['rules']
+            )
             tasks.append(task)
 
         if not tasks:
@@ -2230,31 +2187,7 @@ class HfunCollector(BaseHfun):
         _logger.info("Parallel execution finished.")
 
         # Phase 3: INTEGRATION
-        new_hfun_objects = {}
-        for result in results:
-            if result['status'] == 'error':
-                _logger.error("Val worker %s failed: %s",
-                              result['original_index'],
-                              result['error'])
-                continue
-
-            idx = result['original_index']
-            output_path = result['output_path']
-            original_hfun = self._hfun_list[idx]
-
-            # Create the new HfunRaster, ensuring we don't wipe the worker's data.
-            new_hfun_objects[idx] = HfunRaster(
-            raster=original_hfun.raster, # Pass the original topography Raster object
-            hmin=original_hfun.hmin,
-            hmax=original_hfun.hmax,
-            verbosity=original_hfun.verbosity,
-            initial_value=output_path # Pass the path to the file created by the worker
-            )
-
-        # Finally, update the main list with the newly created objects.
-        for idx, new_hfun in new_hfun_objects.items():
-            _logger.info(f"Update HfunCollector with const_val raster at idx {idx}.")
-            self._hfun_list[idx] = new_hfun
+        self._integrate_parallel_results(results, "const_val")
 
 
     def _apply_patch(self, apply_to: Optional[SizeFuncList] = None) -> None:
