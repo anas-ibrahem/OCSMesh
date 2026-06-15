@@ -1,6 +1,8 @@
 import os
 import tempfile
 import urllib.request
+import ssl
+import certifi
 from pathlib import Path
 
 from rasterio.enums import Resampling
@@ -8,12 +10,18 @@ from rasterio.enums import Resampling
 from ocsmesh.raster import Raster
 
 
+def _configure_safe_urllib():
+    """Force urllib to use certifi's CA bundle instead of system certs."""
+    context = ssl.create_default_context(cafile=certifi.where())
+    ssl._create_default_https_context = lambda: context
+
 # Find a better way!
 tif_url = (
     'https://chs.coast.noaa.gov/htdata/raster2/elevation/NCEI_ninth_Topobathy_2014_8483/northeast_sandy/ncei19_n40x75_w073x75_2015v1.tif'
 )
 TEST_FILE = os.path.join(tempfile.gettempdir(), 'test_dem.tif')
 if not Path(TEST_FILE).exists():
+    _configure_safe_urllib() # This is needed to avoid SSL errors when downloading the test file
     tmpfd, tmppath = tempfile.mkstemp()
     urllib.request.urlretrieve(tif_url, filename=tmppath)
     os.close(tmpfd)
