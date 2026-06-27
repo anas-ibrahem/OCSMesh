@@ -41,10 +41,10 @@ ocsmesh = "ocsmesh.__main__:main"
 [project.optional-dependencies]
 gmsh = ["gmsh"]
 triangle = ["triangle"]
-testing = ['pylint>=2.14','triangle','gmsh']
+testing = ['pylint>=2.14','triangle==20250106','gmsh']
 documentation = [
     'sphinx < 7.0.0', # due to sphinx_rtd_theme support
     'sphinx-rtd-theme', 'sphinx-argparse',
     'mistune==0.8.4', 'm2r2', 'numpydoc',
-    'triangle', 'gmsh'
+    'triangle==20250106', 'gmsh'
 ]
