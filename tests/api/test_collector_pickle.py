@@ -113,21 +113,31 @@ class TestHfunCollectorExecution(unittest.TestCase):
     
     @unittest.skipIf(IS_WINDOWS, 'Pickle tests not guaranteed stable on Windows due to I/O issues')
     def test_work_dir_cleanup(self):
-        """Verify that the temporary _work_dir is deleted when the object is destroyed."""
+        """Verify that _work_dir is deleted only by the creator process."""
         hfun = Hfun(self.raster_list, nprocs=2)
-        # Get the path to the temporary directory
         work_dir_path = hfun._work_dir
 
-        # Assert that the directory exists after creation
+        # Assert directory exists and creator PID is recorded
         self.assertTrue(os.path.exists(work_dir_path))
+        self.assertEqual(hfun._creator_pid, os.getpid())
 
-        # Explicitly delete the object to trigger __del__
+        # Simulate a foreign PID (e.g., an MPI worker rank).
+        # __del__ should NOT delete _work_dir.
+        original_pid = hfun._creator_pid
+        hfun._creator_pid = -1  # Impossible PID
         del hfun
-        # Encourage the garbage collector to run
         gc.collect()
+        self.assertTrue(os.path.exists(work_dir_path),
+                        "PID guard failed: foreign PID deleted _work_dir!")
 
-        # Assert that the directory no longer exists
-        self.assertFalse(os.path.exists(work_dir_path))
+        # Now let the real creator clean up
+        hfun2 = Hfun(self.raster_list, nprocs=2)
+        hfun2._work_dir = work_dir_path
+        hfun2._creator_pid = os.getpid()
+        del hfun2
+        gc.collect()
+        self.assertFalse(os.path.exists(work_dir_path),
+                         "Creator's __del__ should have deleted _work_dir.")
 
     
     @unittest.skipIf(IS_WINDOWS, 'Pickle tests not guaranteed stable on Windows due to I/O issues')

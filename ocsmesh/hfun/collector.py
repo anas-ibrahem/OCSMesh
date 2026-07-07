@@ -76,6 +76,95 @@ RASTER_CONSTR = (
 
 _logger = logging.getLogger(__name__)
 
+# Optional MPI support — mpi4py is not required for single-machine use
+try:
+    from mpi4py import MPI
+    _HAS_MPI = True
+except ImportError:
+    _HAS_MPI = False
+
+
+def _is_mpi_active():
+    """Check if we're running under an MPI launcher with >1 rank."""
+    if not _HAS_MPI:
+        return False
+    try:
+        comm = MPI.COMM_WORLD
+        return comm.Get_size() > 1
+    except Exception:
+        return False
+
+
+def _configure_mpi_environment():
+    """Set environment variables for safe MPI + multiprocessing coexistence.
+
+    Prevents numerical libraries (NumPy/SciPy via OpenBLAS/MKL) from
+    spawning internal threads inside Pool workers, which would cause
+    core oversubscription on top of MPI.
+    """
+    for var in ('OMP_NUM_THREADS', 'MKL_NUM_THREADS', 'OPENBLAS_NUM_THREADS'):
+        os.environ.setdefault(var, '1')
+
+
+# Under MPI, 'fork' copies the parent's MPI communicator state into Pool
+# children, causing deadlocks or silent corruption. 'spawn' starts each
+# worker from a clean interpreter with no inherited MPI state.
+# See: https://docs.nersc.gov/development/languages/python/parallel-python/
+if _HAS_MPI:
+    import multiprocessing as _mp
+    try:
+        _mp.set_start_method('spawn', force=False)
+    except RuntimeError:
+        pass  # Already set — ignore
+
+
+def _mpi_dispatch(tasks, worker_fn):
+    """Distribute tasks across MPI ranks using scatter/gather.
+
+    Must be called on ALL ranks (it's a collective operation).
+    Rank 0 provides the actual tasks list; other ranks pass None.
+
+    Parameters
+    ----------
+    tasks : list of dict or None
+        On rank 0: list of task dicts to distribute.
+        On other ranks: ignored (should be None).
+    worker_fn : callable
+        The worker function to apply to each task (same functions
+        used by Pool.map — no changes needed).
+
+    Returns
+    -------
+    list of dict or None
+        On rank 0: flattened list of all results from all ranks.
+        On other ranks: None.
+    """
+    comm = MPI.COMM_WORLD
+    rank = comm.Get_rank()
+    size = comm.Get_size()
+
+    # Rank 0 partitions tasks into chunks — one per rank
+    if rank == 0:
+        chunks = [[] for _ in range(size)]
+        for i, task in enumerate(tasks):
+            chunks[i % size].append(task)
+    else:
+        chunks = None
+
+    # Scatter: each rank gets its chunk
+    my_chunk = comm.scatter(chunks, root=0)
+
+    # Each rank processes its chunk using the SAME worker function
+    my_results = [worker_fn(task) for task in my_chunk]
+
+    # Gather: rank 0 collects all results
+    all_results = comm.gather(my_results, root=0)
+
+    if rank == 0:
+        # Flatten the list of lists
+        return [r for chunk_results in all_results for r in chunk_results]
+    return None
+
 class _RefinementContourInfoCollector:
     """Collection for contour refinement specification
 
@@ -898,6 +987,7 @@ class HfunCollector(BaseHfun):
 
          # Add a persistent working directory for this instance's outputs
         self._work_dir = tempfile.mkdtemp(prefix='hfun_collector_')
+        self._creator_pid = os.getpid()
         # Check nprocs
         nprocs = -1 if nprocs is None else nprocs
         nprocs = cpu_count() if nprocs == -1 else nprocs
@@ -1016,9 +1106,16 @@ class HfunCollector(BaseHfun):
             self._hfun_list.append(hfun) # pylint: disable=E0606
 
 
+
     def __del__(self):
         if hasattr(self, '_work_dir') and os.path.exists(self._work_dir):
             shutil.rmtree(self._work_dir, ignore_errors=True)
+        # if (hasattr(self, '_work_dir')
+        #         and hasattr(self, '_creator_pid')
+        #         and os.getpid() == self._creator_pid
+        #         and os.path.exists(self._work_dir)):
+            # shutil.rmtree(self._work_dir, ignore_errors=True)
+
 
 
     def meshdata(self, **kwargs) -> MeshData:
@@ -2008,15 +2105,39 @@ class HfunCollector(BaseHfun):
         Parameters
         ----------
         mode : str
-            The desired mode. Must be either 'serial' or 'parallel'.
+            The desired mode. Must be 'serial', 'parallel', or 'mpi'.
         """
-        if mode not in ['serial', 'parallel']:
-            raise ValueError("Execution must be either 'serial' or 'parallel'")
+        if mode not in ['serial', 'parallel', 'mpi']:
+            raise ValueError(
+                "Execution mode must be 'serial', 'parallel', or 'mpi'"
+            )
+
+        if mode == 'mpi':
+            if not _HAS_MPI:
+                warnings.warn(
+                    "mpi4py is not installed. Falling back to 'parallel' "
+                    "mode. Install mpi4py for MPI support: "
+                    "pip install ocsmesh[mpi]",
+                    UserWarning
+                )
+                mode = 'parallel'
+            elif not _is_mpi_active():
+                warnings.warn(
+                    "MPI mode requested but not running under "
+                    "mpirun/mpiexec (or running with a single rank). "
+                    "Falling back to 'parallel' mode.",
+                    UserWarning
+                )
+                mode = 'parallel'
+            else:
+                _configure_mpi_environment()
 
         if mode == 'parallel' and (self._nprocs is None or self._nprocs <= 1):
             warnings.warn(
-                f"Execution mode set to 'parallel' but nprocs is {self._nprocs}. "
-            "Execution will fall back to serial. Set nprocs > 1 for parallel."
+                f"Execution mode set to 'parallel' but nprocs is "
+                f"{self._nprocs}. "
+                "Execution will fall back to serial. "
+                "Set nprocs > 1 for parallel."
             )
 
         self._execution_mode = mode
@@ -2448,7 +2569,10 @@ class HfunCollector(BaseHfun):
             each input.
         """
 
-        if self.execution_mode == 'parallel' and self._nprocs > 1:
+        if self.execution_mode == 'mpi':
+            _logger.info("Writing hfun to disk using MPI method.")
+            return self._calculate_and_write_hfun_to_disk_mpi(out_path, **kwargs)
+        elif self.execution_mode == 'parallel' and self._nprocs > 1:
             _logger.info("Writing hfun to disk using PARALLEL method.")
             return self._calculate_and_write_hfun_to_disk_parallel(out_path, **kwargs)
         else:
@@ -2714,6 +2838,184 @@ class HfunCollector(BaseHfun):
 
         return path_list
 
+
+
+    def _calculate_and_write_hfun_to_disk_mpi(
+            self,
+            out_path: Union[str, Path],
+            **kwargs
+            ) -> List[Union[str, Path]]:
+        """MPI path for writing hfun to disk.
+
+        Same two-stage design as ``_parallel``, but Stage 1 uses
+        ``_mpi_dispatch()`` instead of ``Pool.map()``.  The existing
+        ``_meshdata_task_worker`` function is reused unchanged.
+
+        Stage 1 (MPI-parallel): Scatter meshdata tasks across ranks.
+           Each rank calls ``_meshdata_task_worker``, which reads
+           input from the shared filesystem and writes ``.npz``
+           results back.
+
+        Stage 2 (Sequential, Rank 0 only): Load ``.npz`` results in
+           priority order, clip overlaps, clamp hmin/hmax, write
+           ``.2dm``.
+
+        Parameters
+        ----------
+        out_path : path-like
+            Directory for final ``.2dm`` output files.
+        **kwargs : dict
+            Arguments for ``hfun.meshdata()`` (e.g. stride).
+
+        Returns
+        -------
+        list of path-like
+            On Rank 0: list of ``.2dm`` file paths.
+            On other ranks: empty list.
+        """
+
+        out_dir = Path(out_path)
+        path_list = []
+        file_counter = 0
+        pid = os.getpid()
+        bbox_list = []
+
+        hfun_list = self._hfun_list[::-1]
+        if self._base_mesh and self._base_as_hfun:
+            hfun_list = [*self._hfun_list[::-1], self._base_mesh]
+
+        # ========== STAGE 1: MPI-PARALLEL meshdata() ==========
+        # Build tasks — IDENTICAL to the Pool-based parallel variant
+        tasks = []
+        for loop_idx, hfun in enumerate(hfun_list):
+            npz_path = os.path.join(
+                self._work_dir,
+                f"meshdata_stage1_{pid}_{loop_idx}"
+            )
+            if isinstance(hfun, HfunRaster):
+                task = {
+                    'type': 'raster',
+                    'original_index': loop_idx,
+                    'topo_path': hfun._raster.path,
+                    'hfun_input_path': hfun.tmpfile,
+                    'output_path': npz_path,
+                    'hmin': hfun._hmin,
+                    'hmax': hfun._hmax,
+                    'meshdata_kwargs': kwargs
+                }
+            else:
+                # HfunMesh and other types are picklable —
+                # send the object directly to the worker
+                task = {
+                    'type': 'mesh',
+                    'original_index': loop_idx,
+                    'hfun_obj': deepcopy(hfun),
+                    'output_path': npz_path,
+                    'meshdata_kwargs': kwargs
+                }
+            tasks.append(task)
+
+        # MPI dispatch — replaces Pool.map(_meshdata_task_worker, tasks)
+        stage1_results = {}
+        if tasks:
+            _logger.info(
+                f"Stage 1 (MPI): Launching {len(tasks)} meshdata() "
+                f"tasks across {MPI.COMM_WORLD.Get_size()} ranks"
+            )
+            results = _mpi_dispatch(tasks, _meshdata_task_worker)
+            _logger.info("Stage 1 (MPI): All meshdata() calls complete.")
+
+            # results is None on worker ranks
+            if results is not None:
+                for result in results:
+                    if result['status'] == 'error':
+                        _logger.error(
+                            f"meshdata worker failed for loop index "
+                            f"{result['original_index']}: "
+                            f"{result['error']}"
+                        )
+                        continue
+                    stage1_results[result['original_index']] = \
+                        result['output_path']
+        else:
+            # No tasks — still participate in collective operations
+            _mpi_dispatch([], _meshdata_task_worker)
+
+        # Workers are done — only Rank 0 continues to Stage 2
+        if MPI.COMM_WORLD.Get_rank() != 0:
+            return []
+
+        # ========== STAGE 2: SEQUENTIAL overlap clip + write ==========
+        # This is IDENTICAL to the Pool-based parallel variant
+        _logger.info("Stage 2: Sequential overlap clipping and .2dm write")
+        for loop_idx in range(len(hfun_list)):
+            if loop_idx in stage1_results:
+                npz_path = stage1_results[loop_idx]
+                data = np.load(npz_path, allow_pickle=False)
+                coords = data['coords'].copy()
+                tria_raw = data['tria']
+                tria = tria_raw.copy() if tria_raw.size > 0 else None
+                quad_raw = data['quad']
+                quad = quad_raw.copy() if quad_raw.size > 0 else None
+                values = data['values'].copy()
+                crs_str = str(data['crs'])
+                crs = (CRS.from_user_input(crs_str)
+                       if crs_str else None)
+
+                # Close NpzFile handle before deleting
+                data.close()
+                del data
+                meshdata_hfun = MeshData(
+                    coords=coords, tria=tria,
+                    quad=quad, values=values, crs=crs
+                )
+                # Clean up intermediate .npz — data is in memory now
+                try:
+                    os.remove(npz_path)
+                except OSError:
+                    _logger.debug(
+                        f"Could not remove temp file {npz_path}"
+                    )
+            else:
+                # Worker failed for this index — skip
+                continue
+
+            # Clip against all previously-accumulated bounding boxes
+            _logger.info("Removing bounds from hfun mesh...")
+            for ibox in bbox_list:
+                meshdata_hfun = utils.clip_mesh_by_shape(
+                    meshdata_hfun,
+                    ibox,
+                    use_box_only=True,
+                    fit_inside=True,
+                    inverse=True)
+
+            if len(meshdata_hfun.coords) == 0:
+                _logger.debug("Hfun ignored due to overlap")
+                continue
+
+            # Check meshdata_hfun.value against hmin & hmax
+            hmin = self._size_info['hmin']
+            hmax = self._size_info['hmax']
+            if hmin:
+                meshdata_hfun.values[
+                    meshdata_hfun.values < hmin] = hmin
+            if hmax:
+                meshdata_hfun.values[
+                    meshdata_hfun.values > hmax] = hmax
+
+            mesh = Mesh(meshdata_hfun)
+            bbox_list.append(mesh.get_bbox(crs="EPSG:4326"))
+            file_counter = file_counter + 1
+            _logger.info(f'write mesh {file_counter} to file...')
+            file_path = out_dir / f'hfun_{pid}_{file_counter}.2dm'
+            mesh.write(file_path, format='2dm')
+            path_list.append(file_path)
+            _logger.info('Done writing 2dm file.')
+            del mesh
+            gc.collect()
+
+        return path_list
 
 
     def _get_hfun_composite(
