@@ -134,3 +134,14 @@ dmypy.json
 
 # Temporary editor files
 *.swp
+
+
+# By Anas (SHOULD NOT PUSH THAT)
+.agents
+pro.pdf
+skills-lock.json    
+*md
+
+# Ignore persistent test data
+tests/test_data/
+tests/api/__init__.py
