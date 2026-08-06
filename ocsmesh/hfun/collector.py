@@ -83,6 +83,7 @@ from ocsmesh.mpi import (
     MPIExecutor,
     _get_mpi,
     _is_mpi_active,
+    _is_mpi_env_detected,
     _configure_mpi_environment,
 )
 
@@ -2105,7 +2106,16 @@ class HfunCollector(BaseHfun):
             )
 
         if mode == 'mpi':
-            if _get_mpi() is None:
+            if not _is_mpi_env_detected():
+                # Not running under mpiexec/srun — can't use MPI.
+                warnings.warn(
+                    "MPI mode requested but no MPI environment detected "
+                    "(no mpiexec/srun). Falling back to 'parallel' mode.",
+                    UserWarning
+                )
+                mode = 'parallel'
+            elif _get_mpi() is None:
+                # Under MPI launcher but mpi4py not installed.
                 warnings.warn(
                     "mpi4py is not installed. Falling back to 'parallel' "
                     "mode. Install mpi4py for MPI support: "
@@ -2114,8 +2124,9 @@ class HfunCollector(BaseHfun):
                 )
                 mode = 'parallel'
             elif not _is_mpi_active():
+                # mpi4py available but only 1 rank — pointless.
                 warnings.warn(
-                    "MPI mode requested but no MPI environment detected. "
+                    "MPI mode requested but only 1 rank detected. "
                     "Falling back to 'parallel' mode.",
                     UserWarning
                 )
