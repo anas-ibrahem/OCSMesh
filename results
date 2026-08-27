@@ -1,0 +1,851 @@
+21:59 ~/repos/OCSMesh dev
+❯  conda activate ocsmesh-dev
+(ocsmesh-dev) 22:00 ~/repos/OCSMesh dev
+❯ cd ~
+(ocsmesh-dev) 22:00 ~ 
+❯ python -c "import ocsmesh.hfun.collector as c; print(c.__file__, hasattr(c.HfunCollector,'_apply_contours_parallel'))" ; cd -
+/home/anas/repos/OCSMesh/ocsmesh/hfun/collector.py True
+/home/anas/repos/OCSMesh
+(ocsmesh-dev) 22:00 ~/repos/OCSMesh dev
+❯ python -m pytest tests/api/test_contours_parallel.py -v
+=============== test session starts ===============
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0 -- /home/anas/miniconda3/envs/ocsmesh-dev/bin/python
+cachedir: .pytest_cache
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /home/anas/repos/OCSMesh
+configfile: pyproject.toml
+plugins: asyncio-1.4.0, anyio-4.13.0, benchmark-5.2.3
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 16 items                                
+
+tests/api/test_contours_parallel.py::ContoursSerialVsParallel::test_contour_collector_crs_roundtrip PASSED [  6%]
+tests/api/test_contours_parallel.py::ContoursSeriVsParallel::test_contours_full_pipeline_serial_pallel_equal PASSED [ 12%]
+tests/api/test_contours_parallel.                alVsParallel::test_contours_paral  ntour_dir PASSED [ 18%]
+tests/api/test_contours_parallel.py::ContoursSeri  alVsParallel::test_contours_parallel_raises_when_  worker_fails PASSED [ 25%]
+tests/api/test_contours_parallel.py::ContoursSerialVsParallel::test_contours_parallel_with_mesh_hfun PASSED [ 31%]
+tests/api/test_contours_              VsParallel::test_contour                      qual PASSED [ 37%]
+tests/api/test_contours_parallel.py::ContoursSerialVsParallel::test_contours_task_dicts_are_pickleable PASSED [ 43%]
+tests/api/test_contours_parallel.py::ContoursSerialVsParallel::test_fast_method_always_uses_serial PASSED [ 50%]
+tests/api/test_contours_parallel.py::ContoursSerialVsParallel::test_worker_reports_error_instead_of_crashing PASSED [ 56%]
+tests/api/test_contours_parallel.py::PoolIsOptional::test_mesh_add_feature_nprocs_1 PASSED [ 62%]
+tests/api/test_contours_parallel.py::PoolIsOptional::test_pool_starmap_matches_pool PASSED [ 68%]
+tests/api/test_contours_parallel.py::PoolIsOptional::test_raster_add_channel_nprocs_1 PASSED [ 75%]
+tests/api/test_contours_parallel.py::PoolIsOptional::test_raster_add_feature_nprocs_1 PASSED [ 81%]
+tests/api/test_contours_parallel.py::PoolIsOptional::test_raster_add_patch_nprocs_1 PASSED [ 87%]
+tests/api/test_contours_parallel.py::SourceIndexWithMixedInputs::test_const_val_source_index PASSED [ 93%]
+tests/api/test_contours_parallel.py::SourceIndexWithMixedInputs::test_flow_limiter_source_index PASSED [100%]
+
+============== warnings summary ==============
+tests/api/test_contours_parallel.py: 316 warnings
+  /home/anas/miniconda3/envs/ocsmesh-dev/lib/python3.12/multiprocessing/popen_fork.py:66: DeprecationWarning: This process (pid=101634) is multi-threaded, use of fork() may lead to deadlocks in the child.
+    self.pid = os.fork()
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+===== 16 passed, 316 warnings in 14.49s ======
+-> took 30s
+(ocsmesh-dev) 22:00 ~/repos/OCSMesh dev
+❯ ^C
+-> took 57s
+(ocsmesh-dev) 22:01 ~/repos/OCSMesh dev
+❯ 
+
+______________________
+22:00 ~/repos/OCSMesh dev
+❯  conda activate ocsmesh-dev
+(ocsmesh-dev) 22:00 ~/repos/OCSMesh dev
+❯ python -m pytest tests/api/test_hfun.py tests/api/test_collector_pickle.py tests/api/test_mpi_mode_property.py -v
+============ test session starts =============
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0 -- /home/anas/miniconda3/envs/ocsmesh-dev/bin/python
+cachedir: .pytest_cache
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /home/anas/repos/OCSMesh
+configfile: pyproject.toml
+plugins: asyncio-1.4.0, anyio-4.13.0, benchmark-5.2.3
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 61 items                           
+
+tests/api/test_hfun.py::SizeFunctionType::test_create_collector_hfun PASSED [  1%]
+tests/api/test_hfun.py::SizeFunctionType::test_create_mesh_hfun PASSED [  3%]
+tests/api/test_hfun.py::SizeFunctionType::test_create_raster_hfun PASSED [  4%]
+tests/api/test_hfun.py::SizeFunctionCollector::test_add_channel_exact PASSED [  6%]
+tests/api/test_hfun.py::SizeFunctionCollector::test_add_channel_fast PASSED [  8%]
+tests/api/test_hfun.py::SizeFunctionCollector::test_add_constant_value_exact PASSED [  9%]
+tests/api/test_hfun.py::SizeFunctionCollector::test_add_constant_value_fast PASSED [ 11%]
+tests/api/test_hfun.py::SizeFunctionCollector::test_add_contor_fast PASSED [ 13%]
+tests/api/test_hfun.py::SizeFunctionCollector::test_add_contour_exact PASSED [ 14%]
+tests/api/test_hfun.py::SizeFunctionCollector::test_add_contour_single_vertex PASSED [ 16%]
+tests/api/test_hfun.py::SizeFunctionCollector::test_add_feature_exact PASSED [ 18%]
+tests/api/test_hfun.py::SizeFunctionCollector::test_add_feature_fast PASSED [ 19%]
+tests/api/test_hfun.py::SizeFunctionCollector::test_add_patch_exact PASSED [ 21%]
+tests/api/test_hfun.py::SizeFunctionCollector::test_add_patch_fast PASSED [ 22%]
+tests/api/test_hfun.py::SizeFunctionCollector::test_add_topo_bound_constraint_exact PASSED [ 24%]
+tests/api/test_hfun.py::SizeFunctionCollector::test_add_topo_bound_constraint_fast PASSED [ 26%]
+tests/api/test_hfun.py::SizeFunctionCollector::test_add_topo_func_constraint_exact PASSED [ 27%]
+tests/api/test_hfun.py::SizeFunctionCollector::test_add_topo_func_constraint_fast PASSED [ 29%]
+tests/api/test_hfun.py::SizeFunctionCollector::test_hfun_fast_extent PASSED [ 31%]
+tests/api/test_hfun.py::SizeFunctionCollector::test_mesh_input PASSED [ 32%]
+tests/api/test_hfun.py::SizeFunctionCollector::test_multi_mix_input PASSED [ 34%]
+tests/api/test_hfun.py::SizeFunctionCollector::test_multi_path_input PASSED [ 36%]
+tests/api/test_hfun.py::SizeFunctionCollector::test_multi_raster_input PASSED [ 37%]
+tests/api/test_hfun.py::SizeFunctionCollector::test_multi_str_input PASSED [ 39%]
+tests/api/test_hfun.py::Sculated_size PASSED        [ 40%]
+tests/api/test_hfun.py::SizeFunctionWithCourantNumConstraint::test_hfun_coll_cfl_constraint FAILED [ 42%]
+tests/api/test_hfun.py::SizeFunctionWithCourantNumConstraint::test_hfun_raster_cfl_constraint_io PASSED [ 44%]
+tests/api/test_hfun.py::S       izeFunctionWithCourantNum       Constraint::test_hfun_ras       ter_cfl_constraint_suppor   t PASSED [ 45%]
+tests/api/test_hfun.py::SizeFunctionCollectorAddFeature::test_by_linedefn PASSED [ 47%]
+tests/api/test_hfun.py::SizeFunctionCollectorAddFeature::test_by_shape PASSED [ 49%]
+tests/api/test_hfun.py::SizeFunctionCollectorAddFeature::test_by_shapefile PASSED [ 50%]
+tests/api/test_hfun.py::SizeFunctionCollectorAddFeature::test_optional_arg_priority PASSED [ 52%]
+tests/api/test_hfun.py::SizeFunctionWithRegionConstraint::test_hfun_collector_exact PASSED [ 54%]
+tests/api/test_hfun.py::SizeFunctionWithRegionConstraint::test_hfun_collector_fast PASSED [ 55%]
+tests/api/test_hfun.py::SizeFunctionWithRegionConstraint::test_hfun_mesh PASSED [ 57%]
+tests/api/test_hfun.py::SizeFunctionWithRegionConstraint::test_hfun_raster PASSED [ 59%]
+tests/api/test_hfun.py::HfunConstraintApplyHold::test_hold_meshhfun_constraint PASSED [ 60%]
+tests/api/test_hfun.py::HfunConstraintApplyHold::test_hold_rasterhfun_constraint PASSED [ 62%]
+tests/api/test_collector_pickle.py::TestHfunCollectorExecution::test_add_channel_backward_compat_nprocs PASSED [ 63%]
+tests/api/test_collector_pickle.py::TestHfunCollectorExecution::test_add_channel_with_pool PASSED [ 65%]
+tests/api/test_collector_pickle.py::TestHfunCollectorExecution::test_add_patch_backward_compat_nprocs PASSED [ 67%]
+tests/api/test_collector_pickle.py::TestHfunCollectorExecution::test_add_patch_with_expansion_backward_compat_nprocs PASSED [ 68%]
+tests/api/test_collector_pickle.py::TestHfunCollectorExecution::test_execution_mode_property PASSED [ 70%]
+tests/api/test_collector_pickle.py::TestHfunCollectorExecution::test_hfunraster_initial_value_logic PASSED [ 72%]
+tests/api/test_collector_pickle.py::TestHfunCollectorExecution::test_mixed_raster_mesh_constraint_filtering PASSED [ 73%]
+tests/api/test_collector_pickle.py::TestHfunCollectorExecution::test_parallel_calculate_and_write_hfun_single_raster PASSED [ 75%]
+tests/api/test_collector_pickle.py::TestHfunCollectorExecution::test_parallel_calculate_and_write_hfun_with_base_mesh PASSED [ 77%]
+tests/api/test_collector_pickle.py::TestHfunCollectorExecution::test_parallel_falls_back_for_func_constraint PASSED [ 78%]
+tests/api/test_collector_pickle.py::TestHfunCollectorExecution::test_serial_vs_parallel_calculate_and_write_hfun_to_disk_equivalence PASSED [ 80%]
+tests/api/test_collector_pickle.py::TestHfunCollectorExecution::test_serial_vs_parallel_channel_equivalence PASSED [ 81%]
+tests/api/test_collector_pickle.py::TestHfunCollectorExecution::test_serial_vs_parallel_constraints_equivalence PASSED [ 83%]
+tests/api/test_collector_pickle.py::TestHfunCollectorExecution::test_serial_vs_parallel_equivalence PASSED [ 85%]
+tests/api/test_collector_pickle.py::TestHfunCollectorExecution::test_serial_vs_parallel_patch_equivalence PASSED [ 86%]
+tests/api/test_collector_pickle.py::TestHfunCollectorExecution::test_serial_vs_parallel_patch_with_expansion_equivalence PASSED [ 88%]
+tests/api/test_collector_pickle.py::TestHfunCollectorExecution::test_work_dir_cleanup PASSED [ 90%]
+tests/api/test_mpi_mode_property.py::TestMPIModeProperty::test_execution_mode_accepts_mpi_string PASSED [ 91%]
+tests/api/test_mpi_mode_property.py::TestMPIModeProperty::test_invalid_mode_raises PASSED [ 93%]
+tests/api/test_mpi_mode_property.py::TestMPIModeProperty::test_mpi_mode_fallback_no_mpi4py PASSED [ 95%]
+tests/api/test_mpi_mode_property.py::TestMPIModeProperty::test_mpi_mode_fallback_not_under_mpiexec PASSED [ 96%]
+tests/api/test_mpi_mode_property.py::TestMPIExcepthookUnit::test_excepthook_installed_and_aborts_comm PASSED [ 98%]
+tests/api/test_mpi_mode_property.py::TestMPIExcepthookUnit::test_excepthook_no_op_when_no_mpi PASSED [100%]
+
+=================================== FAILURES ===================================
+______ SizeFunctionWithCourantNumConstraint.test_hfun_coll_cfl_constraint ______
+
+self = <tests.api.test_hfun.SizeFunctionWithCourantNumConstraint testMethod=test_hfun_coll_cfl_constraint>
+
+    def test_hfun_coll_cfl_constraint(self):
+        dt = 100
+        nu = 2
+        courant_hi = 0.90
+        courant_lo = 0.2
+    
+        # Fast method is much less accurate!
+        # Relaxing it for gmsh
+        method_tolerance = {
+            'exact': 0.1,
+            'fast': 0.6  # Bad large tolerance!
+        }
+    
+        for method, tol in method_tolerance.items():
+            # TODO: Add subTest
+    
+            # Creating adjacent rasters from the test raster
+            rast1 = ocsmesh.raster.Raster(TEST_FILE)
+            rast2 = ocsmesh.raster.Raster(TEST_FILE)
+            bounds = rast1.bbox.bounds
+            bbox1 = geometry.box(
+                bounds[0], bounds[1], (bounds[0] + bounds[2]) / 2, bounds[3]
+            )
+            bbox2 = geometry.box(
+                (bounds[0] + bounds[2]) / 2, bounds[1], bounds[2], bounds[3]
+            )
+            rast1.clip(bbox1)
+            rast2.clip(bbox2)
+    
+            hfun_coll = ocsmesh.hfun.hfun.Hfun(
+                [rast1, rast2], hmin=100, hmax=5000, method=method
+            )
+            hfun_coll.add_courant_num_constraint(
+                upper_bound=courant_hi,
+                lower_bound=courant_lo,
+                timestep=dt,
+                wave_amplitude=nu
+            )
+    
+>           hfun_meshdata = hfun_coll.meshdata()
+                            ^^^^^^^^^^^^^^^^^^^^
+
+tests/api/test_hfun.py:645: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+ocsmesh/hfun/collector.py:1172: in meshdata
+    return self._meshdata_pipeline(**kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ocsmesh/hfun/collector.py:1245: in _meshdata_pipeline
+    rast = self._create_big_raster(temp_dir)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <ocsmesh.hfun.collector.HfunCollector object at 0x797eb207a9c0>
+out_path = '/tmp/tmpvpu_dfv_'
+
+    def _create_big_raster(self, out_path: Union[str, Path]) -> Raster:
+        """Internal: create a large raster covering all input rasters.
+    
+        Parameters
+        ----------
+        out_path : path-like
+            Path of the (tempoerary) directory to which the large
+            raster needs to be written
+    
+        Returns
+        -------
+        Raster
+            Lower resolution raster covering all input rasters.
+        """
+    
+        out_dir = Path(out_path)
+        out_rast = out_dir / 'big_raster.tif'
+    
+        rast_hfun_list = [
+            i for i in self._hfun_list if isinstance(i, HfunRaster)]
+        if len(rast_hfun_list) == 0:
+            return None
+    
+        all_bounds = []
+        n_cell_lim = 0
+        for hfun_in in rast_hfun_list:
+            n_cell_lim = max(
+                hfun_in.raster.src.shape[0]
+                    * hfun_in.raster.src.shape[1],
+                n_cell_lim)
+            all_bounds.append(
+                    hfun_in.get_bbox(crs='EPSG:4326').bounds)
+        # 3 is just a arbitray tolerance for memory limit calculations
+        n_cell_lim = n_cell_lim * self._nprocs / 3
+        all_bounds = np.array(all_bounds)
+    
+        x0, y0 = np.min(all_bounds[:, [0, 1]], axis=0)
+        x1, y1 = np.max(all_bounds[:, [2, 3]], axis=0)
+    
+        utm_crs = utils.estimate_bounds_utm(
+                (x0, y0, x1, y1), "EPSG:4326")
+>       assert utm_crs is not None
+               ^^^^^^^^^^^^^^^^^^^
+E       AssertionError
+
+ocsmesh/hfun/collector.py:3442: AssertionError
+=============================== warnings summary ===============================
+tests/api/test_hfun.py: 2240 warnings
+tests/api/test_collector_pickle.py: 216 warnings
+  /home/anas/miniconda3/envs/ocsmesh-dev/lib/python3.12/multiprocessing/popen_fork.py:66: DeprecationWarning: This process (pid=102370) is multi-threaded, use of fork() may lead to deadlocks in the child.
+    self.pid = os.fork()
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/api/test_hfun.py::SizeFunctionWithCourantNumConstraint::test_hfun_coll_cfl_constraint - AssertionError
+=========== 1 failed, 60 passed, 2456 warnings in 368.46s (0:06:08) ============
+-> took 6m 14s
+(ocsmesh-dev) 22:06 ~/repos/OCSMesh dev
+❯ 
+
+______________________
+_val_source_index PASSED [ 18%]
+tests/api/test_contours_parallel.py::SourceIndexWithMixedInputs::test_flow_limiter_source_index PASSED [ 18%]
+tests/api/test_driver.py::Driver::test_simple_mesh_gen PASSED [ 19%]
+tests/api/test_engines.py::TestFactory::test_get_mesh_engine_success PASSED [ 19%]
+tests/api/test_engines.py::TestGmsh::test_empty_shape_error PASSED [ 20%]
+tests/api/test_engines.py::TestGmsh::test_generate_constant_sizing PASSED [ 20%]
+tests/api/test_engines.py::TestGmsh::test_generate_field_sizing PASSED [ 20%]
+tests/api/test_engines.py::TestGmsh::test_missing_dependency PASSED [ 21%]
+tests/api/test_engines.py::TestGmsh::test_multipolygon PASSED [ 21%]
+tests/api/test_engines.py::TestGmsh::test_options PASSED [ 22%]
+tests/api/test_engines.py::TestGmsh::test_remesh_not_implemented PASSED [ 22%]
+tests/api/test_engines.py::TestTriangle::test_aux_points_seed PASSED [ 23%]
+tests/api/test_engines.py::TestTriangle::test_holes PASSED [ 23%]
+tests/api/test_engines.py::TestTriangle::test_io_validity PASSED [ 24%]
+tests/api/test_engines.py::TestTriangle::test_missing_dependency PASSED [ 24%]
+tests/api/test_engines.py::TestTriangle::test_quad_not_supported PASSED [ 25%]
+tests/api/test_engines.py::TestTriangle::test_remesh PASSED [ 25%]
+tests/api/test_engines.py::TestTriangle::test_sizing_constant PASSED [ 25%]
+tests/api/test_engines.py::TestTriangle::test_sizing_field_fails PASSED [ 26%]
+tests/api/test_engines.py::TestTriangle::test_string_arg_as_option_fails PASSED [ 26%]
+tests/api/test_engines.py::TestBehavior::test_gmsh_dirty_geometry_cleaning PASSED [ 27%]
+tests/api/test_engines.py::TestBehavior::test_sizing_respect 
+tests/api/test_engines.py::TestBehavior::test_sizing_respect PASSED [ 27%]
+tests/api/test_features.py::LineFeatureCapabilities::test_ctor_args_1 PASSED [ 28%]
+tests/api/test_features.py::LineFeatureCapabilities::test_ctor_args_2 PASSED [ 28%]
+tests/api/test_features.py::LineFeatureCapabilities::test_ctor_args_3 PASSED [ 29%]
+tests/api/test_features.py::LineFeatureCapabilities::test_ctor_args_4 PASSED [ 29%]
+tests/api/test_features.py::LineFeatureCapabilities::test_ctor_args_5 PASSED [ 29%]
+tests/api/test_features.py::LineFeatureCapabilities::test_ctor_args_6 PASSED [ 30%]
+tests/api/test_features.py::CourantNumConstraint::test_approx_courant_number_for_depth PASSED [ 30%]
+tests/api/test_features.py::CourantNumConstraint::test_calculate_element_size_from_courant_num PASSED [ 31%]
+tests/api/test_features.py::CourantNumConstraint::test_can_velocity_be_approx_line_wave_theory PASSED [ 31%]
+tests/api/test_features.py::CourantNumConstraint::test_cfl_constraint_max PASSED [ 32%]
+tests/api/test_features.py::CourantNumConstraint::test_cfl_constraint_min PASSED [ 32%]
+tests/api/test_features.py::CourantNumConstraint::test_cfl_constraint_object_api_io PASSED [ 33%]
+tests/api/test_features.py::CourantNumConstraint::test_cfl_constraint_object_api_type PASSED [ 33%]
+tests/api/test_features.py::CourantNumConstraint::test_cfl_constraint_result PASSED [ 33%]
+tests/api/test_features.py::CourantNumConstraint::test_cfl_constraint_unaffected PASSED [ 34%]
+tests/api/test_features.py::CourantNumConstraint::test_estimate_velocity_magnitude_for_depth PASSED [ 34%]
+tests/api/test_features.py::RegionConstraintCapabilities::test_apply_no_rate_1 PASSED [ 35%]
+tests/api/test_features.py::RegionConstraintCapabilities::test_apply_no_rate_2 PASSED [ 35%]
+tests/api/test_features.py::RegionConstraintCapabilities::test_apply_w_rate PASSED [ 36%]
+tests/api/test_features.py::RegionConstraintCapabilities::test_create_by_multipolygon PASSED [ 36%]
+tests/api/test_features.py::RegionConstraintCapabilities::test_create_by_polygon PASSED [ 37%]
+tests/api/test_features.py::RegionConstraintCapabilities::test_crs_warn PASSED [ 37%]
+tests/api/test_features.py::RegionConstraintCapabilities::test_error_on_non_polygon PASSED [ 37%]
+tests/api/test_geom.py::GeomType::test_create_collector_geom PASSED [ 38%]
+tests/api/test_geom.py::GeomType::test_create_mesh_geom PASSED [ 38%]
+tests/api/test_geom.py::GeomType::test_create_raster_geom PASSED [ 39%]
+tests/api/test_geom.py::GeomType::test_create_shape_geom PASSED [ 39%]
+tests/api/test_geom.py::GeomType::test_create_shape_geom_no_crs PASSED [ 40%]
+tests/api/test_geom.py::GeomRaster::test_creation PASSED [ 40%]
+tests/api/test_geom.py::GeomCollector::test_add_patch PASSED [ 41%]
+tests/api/test_geom.py::GeomCollector::test_add_patch_shape_should_overlap_all_rasters PASSED [ 41%]
+tests/api/test_geom.py::GeomCollector::test_mesh_input PASSED [ 41%]
+tests/api/test_geom.py::GeomCollector::test_multi_mix_input PASSED [ 42%]
+tests/api/test_geom.py::GeomCollector::test_multi_path_input PASSED [ 42%]
+tests/api/test_geom.py::GeomCollector::test_multi_raster_input PASSED [ 43%]
+tests/api/test_geom.py::GeomCollector::test_multi_str_input PASSED [ 43%]
+tests/api/test_hfun.py::SizeFunctionType::test_create_collector_hfun PASSED [ 44%]
+tests/api/test_hfun.py::SizeFunctionType::test_create_mesh_hfun PASSED [ 44%]
+tests/api/test_hfun.py::SizeFunctionType::test_create_raster_hfun PASSED [ 45%]
+tests/api/test_hfun.py::SizeFunctionCollector::test_add_channel_exact PASSED [ 45%]
+tests/api/test_hfun.py::SizeFunctionCollector::test_add_channel_fast PASSED [ 45%]
+tests/api/test_hfun.py::SizeFunctionCollector::test_add_constant_value_exact PASSED [ 46%]
+tests/api/test_hfun.py::SizeFunctionCollector::test_add_constant_value_fast PASSED [ 46%]
+tests/api/test_hfun.py::SizeFunctionCollector::test_add_contor_fast PASSED [ 47%]
+tests/api/test_hfun.py::SizeFunctionCollector::test_add_contour_exact PASSED [ 47%]
+tests/api/test_hfun.py::SizeFunctionCollector::test_add_contour_single_vertex PASSED [ 48%]
+tests/api/test_hfun.py::SizeFunctionCollector::test_add_feature_exact PASSED [ 48%]
+tests/api/test_hfun.py::SizeFunctionCollector::test_add_feature_fast PASSED [ 49%]
+tests/api/test_hfun.py::SizeFunctionCollector::test_add_patch_exact PASSED [ 49%]
+tests/api/test_hfun.py::SizeFunctionCollector::test_add_patch_fast PASSED [ 50%]
+tests/api/test_hfun.py::SizeFunctionCollector::test_add_topo_bound_constraint_exact PASSED [ 50%]
+tests/api/test_hfun.py::SizeFunctionCollector::test_add_topo_bound_constraint_fast PASSED [ 50%]
+tests/api/test_hfun.py::S:test_add_topo_func_consPASSED [ 51%]
+tests/api/test_hfun.py::S       izeFunctionCollector::tes       t_add_topo_func_constrain       t_fast PASSED [ 51%]
+tests/api/test_hfun.py::SizeFunctionCollector::test_hfun_fast_extent PASSED [ 52%]
+tests/api/test_hfun.py::SizeFunctionCollector::test_mesh_input PASSED    [ 52%]
+tests/api/test_hfun.py::SizeFunctionCollector::test_multi_mix_input PASSED [ 53%]
+tests/api/test_hfun.py::SizeFunctionCollector::test_multi_path_input PASSED [ 53%]
+tests/api/test_hfun.py::SizeFunctionCollector::test_multi_raster_input PASSED [ 54%]
+tests/api/test_hfun.py::SizeFunctionCollector::test_multi_str_input PASSED [ 54%]
+tests/api/test_hfun.py::SizeFromMesh::test_calculated_size PASSED        [ 54%]
+tests/api/test_hfun.py::SizeFunctionWithCourantNumConstraint::test_hfun_coll_cfl_constraint FAILED [ 55%]
+tests/api/test_hfun.py::SizeFunctionWithCourantNumConstraint::test_hfun_raster_cfl_constraint_io PASSED [ 55%]
+tests/api/test_hfun.py::SizeFunctionWithCourantNumConstraint::test_hfun_raster_cfl_constraint_support PASSED [ 56%]
+tests/api/test_hfun.py::SizeFunctionCollectorAddFeature::test_by_linedefn PASSED [ 56%]
+tests/api/test_hfun.py::SizeFunctionCollectorAddFeature::test_by_shape PASSED [ 57%]
+tests/api/test_hfun.py::SizeFunctionCollectorAddFeature::test_by_shapefile PASSED [ 57%]
+tests/api/test_hfun.py::SizeFunctionCollectorAddFeature::test_optional_arg_priority PASSED [ 58%]
+tests/api/test_hfun.py::SizeFunctionWithRegionConstraint::test_hfun_collector_exact PASSED [ 58%]
+tests/api/test_hfun.py::SizeFunctionWithRegionConstraint::test_hfun_collector_fast PASSED [ 58%]
+tests/api/test_hfun.py::SizeFunctionWithRegionConstraint::test_hfun_mesh PASSED [ 59%]
+tests/api/test_hfun.py::SizeFunctionWithRegionConstraint::test_hfun_raster PASSED [ 59%]
+tests/api/test_hfun.py::HfunConstraintApplyHold::test_hold_meshhfun_constraint PASSED [ 60%]
+tests/api/test_hfun.py::HfunConstraintApplyHold::test_hold_rasterhfun_constraint PASSED [ 60%]
+tests/api/test_internal.py::TestMeshData::test_coords_3d_rejected PASSED [ 61%]
+tests/api/test_internal.py::TestMeshData::test_coords_update_logic PASSED [ 61%]
+tests/api/test_internal.py::TestMeshData::test_crs_assignment PASSED     [ 62%]
+tests/api/test_internal.py::TestMeshData::test_crs_init PASSED           [ 62%]
+tests/api/test_internal.py::TestMeshData::test_element_integer_validation PASSED [ 62%]
+tests/api/test_internal.py::TestMeshData::test_explicit_column_vector PASSED [ 63%]
+tests/api/test_internal.py::TestMeshData::test_initialization_full PASSED [ 63%]
+tests/api/test_internal.py::TestMeshData::test_initialization_minimal PASSED [ 64%]
+tests/api/test_internal.py::TestMeshData::test_list_input_compatibility PASSED [ 64%]
+tests/api/test_internal.py::TestMeshData::test_store_scalar_as_column_vector PASSED [ 65%]
+tests/api/test_internal.py::TestMeshData::test_values_length_mismatch PASSED [ 65%]
+tests/api/test_internal.py::TestMeshData::test_vector_preservation_on_resize PASSED [ 66%]
+tests/api/test_internal.py::TestMeshData::test_vector_values PASSED      [ 66%]
+tests/api/test_mesh.py::BoundaryExtraction::test_auto_boundary_1open_correctness PASSED [ 66%]
+tests/api/test_mesh.py::BoundaryExtraction::test_auto_boundary_2open_correctness PASSED [ 67%]
+tests/api/test_mesh.py::BoundaryExtraction::test_auto_boundary_fails_if_na_elev PASSED [ 67%]
+tests/api/test_mesh.py::BoundaryExtraction::test_auto_find_islands_only PASSED [ 68%]
+tests/api/test_mesh.py::BoundaryExtraction::test_manual_boundary_brokenring_stillconnected PASSED [ 68%]
+tests/api/test_mesh.py::BoundaryExtraction::test_manual_boundary_connect_two_separate_segments PASSED [ 69%]
+tests/api/test_mesh.py::BoundaryExtraction::test_manual_boundary_convex_region PASSED [ 69%]
+tests/api/test_mesh.py::BoundaryExtraction::test_manual_boundary_merge_sametype PASSED [ 70%]
+tests/api/test_mesh.py::BoundaryExtraction::test_manual_boundary_notaffect_interior PASSED [ 70%]
+tests/api/test_mesh.py::BoundaryExtraction::test_manual_boundary_specification_correctness PASSED [ 70%]
+tests/api/test_mesh.py::BoundaryExtraction::test_specified_boundary_order_nomerge PASSED [ 71%]
+tests/api/test_mesh.py::BoundaryExtraction::test_specified_boundary_order_withmerge PASSED [ 71%]
+tests/api/test_mesh.py::BoundaryExtraction::test_specify_boundary_on_imported_mesh_with_boundary PASSED [ 72%]
+tests/api/test_mesh.py::BoundaryExtraction::test_specify_boundary_on_mesh_with_no_boundary PASSED [ 72%]
+tests/api/test_mesh.py::RasterInterpolation::test_interpolation_band PASSED [ 73%]
+tests/api/test_mesh.py::RasterInterpolation::test_interpolation_io PASSED [ 73%]
+tests/api/test_mpi_mode_property.py::TestMPIModeProperty::test_execution_mode_accepts_mpi_string PASSED [ 74%]
+tests/api/test_mpi_mode_property.py::TestMPIModeProperty::test_invalid_mode_raises PASSED [ 74%]
+tests/api/test_mpi_mode_property.py::TestMPIModeProperty::test_mpi_mode_fallback_no_mpi4py PASSED [ 75%]
+tests/api/test_mpi_mode_property.py::TestMPIModeProperty::test_mpi_mode_fallback_not_under_mpiexec PASSED [ 75%]
+tests/api/test_mpi_mode_property.py::TestMPIExcepthookUnit::test_excepthook_installed_and_aborts_comm PASSED [ 75%]
+tests/api/test_mpi_mode_property.py::TestMPIExcepthookUnit::test_excepthook_no_op_when_no_mpi PASSED [ 76%]
+tests/api/test_raster.py::Raster::test_avg_filter_masked_nanfill PASSED  [ 76%]
+tests/api/test_raster.py::Raster::test_avg_filter_masked_nonnanfill PASSED [ 77%]
+tests/api/test_raster.py::Raster::test_avg_filter_nomask PASSED          [ 77%]
+tests/api/test_river_mesh.py::TestRiverMesh::test_quadrangulate_rivermapper_arcs_simple PASSED [ 78%]
+tests/api/test_river_mesh.py::TestRiverMesh::test_quadrangulate_sorting_logic PASSED [ 78%]
+tests/api/test_river_mesh.py::TestRiverMesh::test_triangulate_poly_integration PASSED [ 79%]
+tests/api/test_utils.py::SetUp::test_cpp_version_parsing PASSED          [ 79%]
+tests/api/test_utils.py::QuadCleanup::test_clip_elements_by_index PASSED [ 79%]
+tests/api/test_utils.py::FinalizeMesh::test_cleanup_duplicate PASSED     [ 80%]
+tests/api/test_utils.py::FinalizeMesh::test_cleanup_mesh_and_generate_valid_mesh PASSED [ 80%]
+tests/api/test_utils.py::RemovePolygonHoles::test_invalid_input_raises PASSED [ 81%]
+tests/api/test_utils.py::RemovePolygonHoles::test_no_mutate_input_1 PASSED [ 81%]
+tests/api/test_utils.py::RemovePolygonHoles::test_no_mutate_input_2 PASSED [ 82%]
+tests/api/test_utils.py::RemovePolygonHoles::test_remove_multipolygon_holes PASSED [ 82%]
+tests/api/test_utils.py::RemovePolygonHoles::test_remove_multipolygon_holes_with_size PASSED [ 83%]
+tests/api/test_utils.py::RemovePolygonHoles::test_remove_polygon_holes PASSED [ 83%]
+tests/api/test_utils.py::RemovePolygonHoles::test_remove_polygon_holes_with_size PASSED [ 83%]
+tests/api/test_utils.py::CreateRectangleMesh::test_1hole PASSED          [ 84%]
+tests/api/test_utils.py::CreateRectangleMesh::test_combined_holes PASSED [ 84%]
+tests/api/test_utils.py::CreateRectangleMesh::test_extent_input PASSED   [ 85%]
+tests/api/test_utils.py::CreateRectangleMesh::test_min_input PASSED      [ 85%]
+tests/api/test_utils.py::CreateRectangleMesh::test_quads PASSED          [ 86%]
+tests/api/test_utils.py::CreateRectangleMesh::test_quads_n_holes_pass_the_same PASSED [ 86%]
+tests/api/test_utils.py::CreateRectangleMesh::test_side_n_corner_holes PASSED [ 87%]
+tests/api/test_utils.py::CreateMeshTFromNumpy::test_crs PASSED           [ 87%]
+tests/api/test_utils.py::CreateMeshTFromNumpy::test_min_input PASSED     [ 87%]
+tests/api/test_utils.py::CreateMeshTFromNumpy::test_quads PASSED         [ 88%]
+tests/api/test_utils.py::CreateMeshTFromNumpy::test_values_are_assigned PASSED [ 88%]
+tests/api/test_utils.py::CreateMeshTFromNumpy::test_values_input_validation PASSED [ 89%]
+tests/api/test_utils.py::CreateRasterFromNumpy::test_basic_create PASSED [ 89%]
+tests/api/test_utils.py::CreateRasterFromNumpy::test_data_masking PASSED [ 90%]
+tests/api/test_utils.py::CreateRasterFromNumpy::test_diff_extent_x_n_y PASSED [ 90%]
+tests/api/test_utils.py::CreateRasterFromNumpy::test_multiband_raster_data 
+tests/api/test_utils.py::CreateRasterFromNumpy::test_multiband_raster_data PASSED [ 91%]
+tests/api/test_utils.py::CreateRasterFromNumpy::test_multiband_raster_invalid_io PASSED [ 91%]
+tests/api/test_utils.py::GetMeshPolygon::test_always_returns_multipolygon PASSED [ 91%]
+tests/api/test_utils.py::RepartitionFeature::test_io_types PASSED        [ 92%]
+tests/api/test_utils.py::RepartitionFeature::test_validity 
+tests/api/test_utils.py::RepartitionFeature::test_validity PASSED        [ 92%]
+tests/api/test_utils.py::TransformLineString::test_io_types PASSED       [ 93%]
+tests/api/test_utils.py::TransformLineString::test_validity 
+tests/api/test_utils.py::TransformLineString::test_validity PASSED       [ 93%]
+tests/api/test_utils.py::TestPhysicsCalculations::test_approximate_courant_number PASSED [ 94%]
+tests/api/test_utils.py::TestPhysicsCalculations::test_can_velocity_be_approximated PASSED [ 94%]
+tests/api/test_utils.py::TestPhysicsCalculations::test_estimate_particle_velocity PASSED [ 95%]
+tests/api/test_utils.py::TestMeshTopologyOps::test_cleanup_concave_quads PASSED [ 95%]
+tests/api/test_utils.py::TestMeshTopologyOps::test_cleanup_skewed_elements PASSED [ 95%]
+tests/api/test_utils.py::TestMeshTopologyOps::test_order_mesh_ccw PASSED [ 96%]
+tests/api/test_utils.py::TestMeshTopologyOps::test_quads_from_tri PASSED [ 96%]
+tests/api/test_utils.py::TestProjections::test_estimate_mesh_utm PASSED  [ 97%]
+tests/api/test_utils.py::TestProjections::test_project_to_utm PASSED     [ 97%]
+tests/api/test_utils.py::TestProjections::test_reproject PASSED          [ 98%]
+tests/api/test_utils.py::TestGeometricResampling::test_resample_geom_by_hfun PASSED [ 98%]
+tests/api/test_utils.py::TestClipping::test_clip_mesh_by_shape_box PASSED [ 99%]
+tests/api/test_utils.py::TestClipping::test_clip_mesh_inverse PASSED     [ 99%]
+tests/api/test_utils.py::TestGraphHelpers::test_get_boundary_edges PASSED [100%]
+
+=================================== FAILURES ===================================
+______ SizeFunctionWithCourantNumConstraint.test_hfun_coll_cfl_constraint ______
+
+self = <tests.api.test_hfun.SizeFunctionWithCourantNumConstraint testMethod=test_hfun_coll_cfl_constraint>
+
+    def test_hfun_coll_cfl_constraint(self):
+        dt = 100
+        nu = 2
+        courant_hi = 0.90
+        courant_lo = 0.2
+    
+        # Fast method is much less accurate!
+        # Relaxing it for gmsh
+        method_tolerance = {
+            'exact': 0.1,
+            'fast': 0.6  # Bad large tolerance!
+        }
+    
+        for method, tol in method_tolerance.items():
+            # TODO: Add subTest
+    
+            # Creating adjacent rasters from the test raster
+            rast1 = ocsmesh.raster.Raster(TEST_FILE)
+            rast2 = ocsmesh.raster.Raster(TEST_FILE)
+            bounds = rast1.bbox.bounds
+            bbox1 = geometry.box(
+                bounds[0], bounds[1], (bounds[0] + bounds[2]) / 2, bounds[3]
+            )
+            bbox2 = geometry.box(
+                (bounds[0] + bounds[2]) / 2, bounds[1], bounds[2], bounds[3]
+            )
+            rast1.clip(bbox1)
+            rast2.clip(bbox2)
+    
+            hfun_coll = ocsmesh.hfun.hfun.Hfun(
+                [rast1, rast2], hmin=100, hmax=5000, method=method
+            )
+            hfun_coll.add_courant_num_constraint(
+                upper_bound=courant_hi,
+                lower_bound=courant_lo,
+                timestep=dt,
+                wave_amplitude=nu
+            )
+    
+>           hfun_meshdata = hfun_coll.meshdata()
+                            ^^^^^^^^^^^^^^^^^^^^
+
+tests/api/test_hfun.py:645: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+ocsmesh/hfun/collector.py:1172: in meshdata
+    return self._meshdata_pipeline(**kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ocsmesh/hfun/collector.py:1245: in _meshdata_pipeline
+    rast = self._create_big_raster(temp_dir)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <ocsmesh.hfun.collector.HfunCollector object at 0x71b255b1aba0>
+out_path = '/tmp/tmpr7qpjmv8'
+
+    def _create_big_raster(self, out_path: Union[str, Path]) -> Raster:
+        """Internal: create a large raster covering all input rasters.
+    
+        Parameters
+        ----------
+        out_path : path-like
+            Path of the (tempoerary) directory to which the large
+            raster needs to be written
+    
+        Returns
+        -------
+        Raster
+            Lower resolution raster covering all input rasters.
+        """
+    
+        out_dir = Path(out_path)
+        out_rast = out_dir / 'big_raster.tif'
+    
+        rast_hfun_list = [
+            i for i in self._hfun_list if isinstance(i, HfunRaster)]
+        if len(rast_hfun_list) == 0:
+            return None
+    
+        all_bounds = []
+        n_cell_lim = 0
+        for hfun_in in rast_hfun_list:
+            n_cell_lim = max(
+                hfun_in.raster.src.shape[0]
+                    * hfun_in.raster.src.shape[1],
+                n_cell_lim)
+            all_bounds.append(
+                    hfun_in.get_bbox(crs='EPSG:4326').bounds)
+        # 3 is just a arbitray tolerance for memory limit calculations
+        n_cell_lim = n_cell_lim * self._nprocs / 3
+        all_bounds = np.array(all_bounds)
+    
+        x0, y0 = np.min(all_bounds[:, [0, 1]], axis=0)
+        x1, y1 = np.max(all_bounds[:, [2, 3]], axis=0)
+    
+        utm_crs = utils.estimate_bounds_utm(
+                (x0, y0, x1, y1), "EPSG:4326")
+>       assert utm_crs is not None
+               ^^^^^^^^^^^^^^^^^^^
+E       AssertionError
+
+ocsmesh/hfun/collector.py:3442: AssertionError
+=============================== warnings summary ===============================
+tests/api/test_collector_pickle.py: 216 warnings
+tests/api/test_contours_parallel.py: 316 warnings
+tests/api/test_driver.py: 96 warnings
+tests/api/test_geom.py: 384 warnings
+tests/api/test_hfun.py: 2240 warnings
+tests/api/test_mesh.py: 64 warnings
+  /home/anas/miniconda3/envs/ocsmesh-dev/lib/python3.12/multiprocessing/popen_fork.py:66: DeprecationWarning: This process (pid=102918) is multi-threaded, use of fork() may lead to deadlocks in the child.
+    self.pid = os.fork()
+
+tests/api/test_combine_mesh.py::TestCombineMesh::test_merge_overlapping_meshes
+tests/api/test_combine_mesh.py::TestCombineMesh::test_merge_overlapping_meshes
+  /home/anas/.local/lib/python3.12/site-packages/pandas/core/generic.py:6220: DeprecationWarning: Overriding the CRS of a GeoDataFrame that already has CRS. This unsafe behavior will be deprecated in future versions. Use GeoDataFrame.set_crs method instead
+    return object.__setattr__(self, name, value)
+
+tests/api/test_features.py::LineFeatureCapabilities::test_ctor_args_6
+  /home/anas/.local/lib/python3.12/site-packages/pyogrio/geopandas.py:917: UserWarning: 'crs' was not provided.  The output dataset will not have projection information defined and may not be usable in other systems.
+    write(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/api/test_hfun.py::SizeFunctionWithCourantNumConstraint::test_hfun_coll_cfl_constraint - AssertionError
+= 1 failed, 217 passed, 6 skipped, 3319 warnings, 1071 subtests passed in 411.96s (0:06:51) =
+-> took 6m 55s
+(ocsmesh-dev) 22:07 ~/repos/OCSMesh dev
+❯ 
+
+_____  __ 
+
+22:01 ~/repos/OCSMesh dev
+❯ mpiexec -n 3 python -m pytest tests/api/mpi_write_hfun_test.py -v
+Command 'mpiexec' not found, but can be installed with:
+sudo apt install lam-runtime       # version 7.1.4-7, or
+sudo apt install mpich             # version 4.1.2-2
+sudo apt install openmpi-bin       # version 4.1.6-5ubuntu1
+sudo apt install slurm-wlm-torque  # version 23.02.6-1ubuntu2
+22:01 ~/repos/OCSMesh dev
+❯  conda activate ocsmesh-dev
+(ocsmesh-dev) 22:01 ~/repos/OCSMesh dev
+❯ mpiexec -n 3 python -m pytest tests/api/mpi_write_hfun_test.py -v
+============ test session starts =============
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0 -- /home/anas/miniconda3/envs/ocsmesh-dev/bin/python
+cachedir: .pytest_cache
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /home/anas/repos/OCSMesh
+configfile: pyproject.toml
+plugins: asyncio-1.4.0, anyio-4.13.0, benchmark-5.2.3
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... ============ test session starts =============
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0 -- /home/anas/miniconda3/envs/ocsmesh-dev/bin/python
+============ test session starts =============
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0 -- /home/anas/miniconda3/envs/ocsmesh-dev/bin/python
+cachedir: .pytest_cache
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /home/anas/repos/OCSMesh
+configfile: pyproject.toml
+plugins: asyncio-1.4.0, anyio-4.13.0, benchmark-5.2.3
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+cachedir: .pytest_cache
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /home/anas/repos/OCSMesh
+configfile: pyproject.toml
+plugins: asyncio-1.4.0, anyio-4.13.0, benchmark-5.2.3
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 4 items                            
+collected 4 items                            
+collecting 4 items                           
+tests/api/mpi_write_hfun_test.py::TestMPIWritecollected 4 items                            
+
+tests/api/mpi_write_hfun_test.py::TestMPIWriteHfun::test_mpi_write_hfun_basic 
+tests/api/mpi_write_hfun_test.py::TestMPIWriteHfun::test_mpi_write_hfun_basic PASSED [ 25%]
+tests/api/mpi_write_hfun_test.py::TestMPIWriteHfun::test_run_classmethod_workers_in_recv_loop PASSED [ 25%]
+tests/api/mpi_write_hfun_test.py::TestMPIWriteHfun::test_run_classmethod_workers_in_recv_loop PASSED [ 25%]
+tests/api/mpi_write_hfun_test.py::TestMPIWriteHfun::test_run_classmethod_workers_in_recv_loop PASSED [ 50%]PASSED [ 50%]
+tests/api/mpi_write_hfun_test.py::TestMPIWriteHfun::test_serial_vs_mpi_write_hfun_equivalence 
+tests/api/mpi_write_hfun_test.py::TestMPIWriteHfun::test_serial_vs_mpi_write_hfun_equivalence PASSED [ 50%]
+tests/api/mpi_write_hfun_test.py::TestMPIWriteHfun::test_serial_vs_mpi_write_hfun_equivalence PASSED [ 75%]
+tests/api/mpi_write_hfun_test.py::TestMPIWriteHfun::test_verify_shared_fs_inside_run PASSED [ 75%]
+tests/api/mpi_write_hfun_test.py::TestMPIWriteHfun::test_verify_shared_fs_inside_run PASSED [ 75%]
+tests/api/mpi_write_hfun_test.py::TestMPIWriteHfun::test_verify_shared_fs_inside_run PASSED [100%]PASSED [100%]
+
+============= 4 passed in 41.01s =============
+PASSED [100%]
+
+
+
+============= 4 passed in 41.02s =============
+============= 4 passed in 41.02s =============
+-> took 44s
+(ocsmesh-dev) 22:01 ~/repos/OCSMesh dev
+❯ 
+
+    ) ) ) ) __ _ _ _ _ _ __ 
+
+    22:01 ~/repos/OCSMesh dev
+❯ mpiexec -n 2 python -m pytest tests/api/mpi_failures_handling_test.py -v^C
+22:01 ~/repos/OCSMesh dev
+❯  conda activate ocsmesh-dev
+(ocsmesh-dev) 22:01 ~/repos/OCSMesh dev
+❯ mpiexec -n 2 python -m pytest tests/api/mpi_failures_handling_test.py -v
+============ test session starts =============
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0 -- /home/anas/miniconda3/envs/ocsmesh-dev/bin/python
+cachedir: .pytest_cache
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /home/anas/repos/OCSMesh
+configfile: pyproject.toml
+plugins: asyncio-1.4.0, anyio-4.13.0, benchmark-5.2.3
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... ============ test session starts =============
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0 -- /home/anas/miniconda3/envs/ocsmesh-dev/bin/python
+cachedir: .pytest_cache
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /home/anas/repos/OCSMesh
+configfile: pyproject.toml
+plugins: asyncio-1.4.0, anyio-4.13.0, benchmark-5.2.3
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+^Ccollecting ... (ocsmesh-dev) 22:01 ~/repos/OCSMesh dev
+❯ mpiexec -n 2 python -m pytest tests/api/mpi_failures_handling_test.py -v
+============ test session starts =============
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0 -- /home/anas/miniconda3/envs/ocsmesh-dev/bin/python
+cachedir: .pytest_cache
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /home/anas/repos/OCSMesh
+configfile: pyproject.toml
+plugins: asyncio-1.4.0, anyio-4.13.0, benchmark-5.2.3
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... ============ test session starts =============
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0 -- /home/anas/miniconda3/envs/ocsmesh-dev/bin/python
+cachedir: .pytest_cache
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /home/anas/repos/OCSMesh
+configfile: pyproject.toml
+plugins: asyncio-1.4.0, anyio-4.13.0, benchmark-5.2.3
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 2 items                            
+collected 2 items                            
+
+tests/api/mpi_failures_handling_test.py::TestMPIFailuresHandling::test_task_exception_recovery 
+tests/api/mpi_failures_handling_test.py::TestMPIFailuresHandling::test_task_exception_recovery PASSED [ 50%]
+tests/api/mpi_failures_handling_test.py::TestMPIFailuresHandling::test_unregistered_op_recovery PASSED [ 50%]
+tests/api/mpi_failures_handling_test.py::TestMPIFailuresHandling::test_unregistered_op_recovery PASSED [100%]PASSED [100%]
+
+============= 2 passed in 6.60s ==============
+
+
+============= 2 passed in 6.60s ==============
+(ocsmesh-dev) 22:01 ~/repos/OCSMesh dev
+❯ 
+
+_____ _ __ 
+22:02 ~/repos/OCSMesh dev
+❯  conda activate ocsmesh-dev
+(ocsmesh-dev) 22:02 ~/repos/OCSMesh dev
+❯ python tests/benchmarks/benchmark_contours.py --tiles 4 --nprocs 4 --config A
+Creating 4 tiles of 120x120 in /tmp/ocsmesh_bench_maih524m ...
+Running mode=serial ...
+Running mode=parallel ...
+
+Config A — contours only
+4 tiles, nprocs=4
+-------------------------------------------------------
+stage              serial (s)  parallel (s)     speedup
+-------------------------------------------------------
+contours                 2.61          0.93       2.80x
+flow_limiters            0.00          0.00       1.14x
+const_val                0.00          0.00       1.30x
+linefeatures             0.05          0.05       1.00x
+patch                    0.04          0.04       1.01x
+channels                 0.04          0.04       0.97x
+constraints              0.00          0.00       1.43x
+total                    2.74          1.07       2.57x
+-------------------------------------------------------
+
+OK   serial vs parallel: all raster values identical
+(ocsmesh-dev) 22:02 ~/repos/OCSMesh dev
+❯ 
+
+
+22:02 ~/repos/OCSMesh dev
+❯  conda activate ocsmesh-dev
+(ocsmesh-dev) 22:02 ~/repos/OCSMesh dev
+❯ python tests/benchmarks/benchmark_contours.py --tiles 8 --nprocs 8 --config A
+Creating 8 tiles of 120x120 in /tmp/ocsmesh_bench_vhgpgr32 ...
+Running mode=serial ...
+Running mode=parallel ...
+
+Config A — contours only
+8 tiles, nprocs=8
+-------------------------------------------------------
+stage              serial (s)  parallel (s)     speedup
+-------------------------------------------------------
+contours                 8.52          2.09       4.07x
+flow_limiters            0.00          0.00       0.77x
+const_val                0.00          0.00       0.93x
+linefeatures             0.09          0.08       1.07x
+patch                    0.08          0.08       0.95x
+channels                 0.08          0.09       0.94x
+constraints              0.00          0.00       0.85x
+total                    8.78          2.35       3.74x
+-------------------------------------------------------
+
+OK   serial vs parallel: all raster values identical
+-> took 14s
+(ocsmesh-dev) 22:02 ~/repos/OCSMesh dev
+❯  
+
+
+22:02 ~/repos/OCSMesh dev
+❯ python tests/benchmarks/benchmark_contours.py --tiles 6 --nprocs 6 --config D --json bench_D.json 2>/dev/null
+22:02 ~/repos/OCSMesh dev
+❯  conda activate ocsmesh-dev
+(ocsmesh-dev) 22:02 ~/repos/OCSMesh dev
+❯ python tests/benchmarks/benchmark_contours.py --tiles 6 --nprocs 6 --config D --json bench_D.json 2>/dev/null
+Creating 6 tiles of 120x120 in /tmp/ocsmesh_bench_s3kphpc0 ...
+Running mode=serial ...
+Running mode=parallel ...
+
+Config D — C + patch + topo-bound constraint
+6 tiles, nprocs=6
+-------------------------------------------------------
+stage              serial (s)  parallel (s)     speedup
+-------------------------------------------------------
+contours                 4.83          1.65       2.93x
+flow_limiters            0.51          0.35       1.47x
+const_val                0.85          0.43       1.95x
+linefeatures             0.06          0.06       0.95x
+patch                    1.16          1.49       0.78x
+channels                 5.36          6.18       0.87x
+constraints              0.51          0.36       1.43x
+total                   13.28         10.52       1.26x
+-------------------------------------------------------
+
+OK   serial vs parallel: all raster values identical
+
+Wrote bench_D.json
+-> took 28s
+(ocsmesh-dev) 22:03 ~/repos/OCSMes
+
+
+
+22:02 ~/repos/OCSMesh dev
+❯  conda activate ocsmesh-dev
+(ocsmesh-dev) 22:02 ~/repos/OCSMesh dev
+❯ python tests/benchmarks/benchmark_contours.py --tiles 4 --nprocs 4 --config D --profile 2>/dev/null | tail -60
+       64    0.004    0.000    5.153    0.081 /home/anas/repos/OCSMesh/ocsmesh/hfun/raster.py:571(apply_added_constraints)
+        1    0.000    0.000    4.132    4.132 /home/anas/repos/OCSMesh/ocsmesh/hfun/collector.py:2323(_apply_channels)
+    56/36    0.006    0.000    3.029    0.084 /home/anas/repos/OCSMesh/ocsmesh/utils.py:1569(wrapper)
+        1    0.000    0.000    2.803    2.803 /home/anas/repos/OCSMesh/ocsmesh/hfun/collector.py:2069(_apply_contours)
+        1    0.000    0.000    2.803    2.803 /home/anas/repos/OCSMesh/ocsmesh/hfun/collector.py:2101(_apply_contours_serial)
+
+
+Running mode=parallel ...
+
+--- cProfile: parallel ---
+         627189 function calls (615370 primitive calls) in 7.290 seconds
+
+   Ordered by: cumulative time
+   List reduced from 2287 to 25 due to restriction <25>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        1    0.000    0.000    7.291    7.291 /home/anas/repos/OCSMesh/tests/benchmarks/benchmark_contours.py:111(run_once)
+  308/167    0.001    0.000    7.242    0.043 /home/anas/miniconda3/envs/ocsmesh-dev/lib/python3.12/multiprocessing/connection.py:390(_recv)
+  308/167    1.473    0.005    7.241    0.043 {built-in method posix.read}
+       83    0.000    0.000    7.204    0.087 /home/anas/miniconda3/envs/ocsmesh-dev/lib/python3.12/multiprocessing/connection.py:246(recv)
+   154/83    0.001    0.000    7.200    0.087 /home/anas/miniconda3/envs/ocsmesh-dev/lib/python3.12/multiprocessing/connection.py:429(_recv_bytes)
+        7    0.001    0.000    7.195    1.028 /home/anas/repos/OCSMesh/tests/benchmarks/benchmark_contours.py:103(timed)
+        7    0.000    0.000    6.137    0.877 /home/anas/miniconda3/envs/ocsmesh-dev/lib/python3.12/multiprocessing/pool.py:738(__exit__)
+        7    0.001    0.000    6.136    0.877 /home/anas/miniconda3/envs/ocsmesh-dev/lib/python3.12/multiprocessing/pool.py:654(terminate)
+       35    0.000    0.000    5.880    0.168 /home/anas/miniconda3/envs/ocsmesh-dev/lib/python3.12/multiprocessing/util.py:208(__call__)
+        7    0.000    0.000    5.879    0.840 /home/anas/miniconda3/envs/ocsmesh-dev/lib/python3.12/multiprocessing/pool.py:680(_terminate_pool)
+        7    0.000    0.000    5.775    0.825 /home/anas/miniconda3/envs/ocsmesh-dev/lib/python3.12/multiprocessing/pool.py:671(_help_stuff_finish)
+        7    0.008    0.001    5.775    0.825 {method 'acquire' of '_multiprocessing.SemLock' objects}
+    101/7    0.000    0.000    5.766    0.824 /home/anas/miniconda3/envs/ocsmesh-dev/lib/python3.12/threading.py:1018(_bootstrap)
+    101/7    0.002    0.000    5.766    0.824 /home/anas/miniconda3/envs/ocsmesh-dev/lib/python3.12/threading.py:1058(_bootstrap_inner)
+    101/7    0.011    0.000    5.766    0.824 /home/anas/miniconda3/envs/ocsmesh-dev/lib/python3.12/threading.py:1001(run)
+        7    0.000    0.000    5.765    0.824 /home/anas/miniconda3/envs/ocsmesh-dev/lib/python3.12/multiprocessing/pool.py:573(_handle_results)
+        7    0.002    0.000    5.759    0.823 /home/anas/miniconda3/envs/ocsmesh-dev/lib/python3.12/multiprocessing/pool.py:527(_handle_tasks)
+    40/20    0.000    0.000    4.293    0.215 /home/anas/repos/OCSMesh/ocsmesh/features/constraint.py:420(wrapped)
+        1    0.000    0.000    3.925    3.925 /home/anas/repos/OCSMesh/ocsmesh/hfun/collector.py:2323(_apply_channels)
+       49    3.808    0.078    3.808    0.078 {built-in method gc.collect}
+       40    0.003    0.000    3.225    0.081 /home/anas/repos/OCSMesh/ocsmesh/hfun/raster.py:571(apply_added_constraints)
+       40    0.010    0.000    3.223    0.081 /home/anas/repos/OCSMesh/ocsmesh/hfun/raster.py:592(apply_constraints)
+    40/20    0.003    0.000    2.725    0.136 /home/anas/repos/OCSMesh/ocsmesh/utils.py:1569(wrapper)
+       20    0.007    0.000    2.724    0.136 /home/anas/repos/OCSMesh/ocsmesh/hfun/raster.py:885(add_patch)
+        4    0.000    0.000    1.380    0.345 /home/anas/miniconda3/envs/ocsmesh-dev/lib/python3.12/multiprocessing/pool.py:362(map)
+
+
+
+Config D — C + patch + topo-bound constraint
+4 tiles, nprocs=4
+-------------------------------------------------------
+stage              serial (s)  parallel (s)     speedup
+-------------------------------------------------------
+contours                 2.80          1.09       2.58x
+flow_limiters            0.39          0.29       1.33x
+const_val                0.61          0.42       1.46x
+linefeatures             0.05          0.04       1.06x
+patch                    0.89          1.16       0.77x
+channels                 4.13          3.93       1.05x
+constraints              0.32          0.27       1.18x
+total                    9.18          7.19       1.28x
+-------------------------------------------------------
+
+OK   serial vs parallel: all raster values identical
+-> took 22s
+(ocsmesh-dev) 22:03 ~/repos/OCSMesh dev
+❯ 
