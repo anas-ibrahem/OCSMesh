@@ -6,6 +6,7 @@ import gc
 import logging
 import os
 from multiprocessing.pool import Pool
+import math
 import operator
 import pathlib
 import tempfile
@@ -53,6 +54,19 @@ _logger = logging.getLogger(__name__)
 
 tmpdir = str(pathlib.Path(tempfile.gettempdir()+'/ocsmesh'))+'/'
 os.makedirs(tmpdir, exist_ok=True)
+
+# Maximum number of points to pass to the gmsh background sizing field
+# (gmsh.view.addListData) per window.  gmsh interpolates the field
+# spatially so it does not need full-raster density — capping at 1 M
+# points is sufficient for any practical hmin/hmax range and prevents
+# the job from hanging or OOM-killing workers on large tiles such as
+# a global GEBCO background (~114 M points at stride=1).
+# Resolution-based auto-stride (computed in meshdata()) handles fine DEMs
+# like CUDEM 1/9"; this cap handles the orthogonal case where the tile is
+# geographically large rather than fine-resolution.
+# Callers can override per-call via the explicit stride= argument.
+_GMSH_MAX_SIZING_PTS: int = 10_000_000
+
 
 class HfunInputRaster:
     """Descriptor class for holding reference to the input raster"""
@@ -295,8 +309,50 @@ class HfunRaster(BaseHfun, Raster):
             iter_windows = [window]
 
         _logger.info(f'Configuring engine: {mesh_engine}...')
+        # For gmsh, default the boundary representation to 'adapt' so the
+        # boundary vertices are resampled to match the hfun resolution
+        # (improves background mesh quality). Callers can still override.
+        # TriangleOptions does not accept this kwarg, so gate on engine.
+        if mesh_engine == 'gmsh':
+            mesh_options.setdefault('bnd_representation', 'adapt')
         # Factory handles loading the specific engine module (abstraction safe)
         engine = get_mesh_engine(mesh_engine, **mesh_options)
+
+        # Auto-compute stride when not provided by the caller.
+        #
+        # Why this matters:
+        #   1/9" CUDEM tiles at ~3 m/pixel resolution produce ~65 M points per
+        #   tile window. Passing all of them to gmsh.view.addListData() requires
+        #   building a Python list of ~260 M floats (≈2 GB RAM per worker). With
+        #   15+ workers in a Pool this stalls or OOMs the job entirely.
+        #
+        # The fix: subsample the sizing field so it has roughly 2 sample points
+        # per minimum-element interval. Gmsh interpolates the background field
+        # spatially, so sub-metre precision in the sizing function is wasted —
+        # gmsh only needs enough points to capture the spatial gradient of the
+        # size function (set by hmin and expansion_rate). A stride of
+        #   stride = int(hmin / dem_res_m / 2)
+        # keeps ~2 samples per hmin and is always >= 1.
+        #
+        # For hmin=1000 m and CUDEM 1/9" (≈3 m/px): stride ≈ 166 → ~2,400
+        # points per tile instead of 65 M. For coarser DEMs (e.g. GEBCO 15"
+        # ≈ 460 m/px): stride = 1 (no subsampling needed, field is already small).
+        #
+        # Resolution estimate: 1 degree ≈ 111,000 m at mid-latitudes. This is
+        # accurate to ~0.5 % for the STOFS domain and is intentionally a simple
+        # approximation to avoid a pyproj round-trip per tile. Callers can always
+        # pass an explicit stride= to override.
+        #
+        # NOTE: WHAT IF THE DEM IS NOT IN DEGREES AND/OR UNITS AS IN FT NOT METERS?
+        if stride is None and self.hmin is not None:
+            dem_res_m = abs(self.dx) * 111_000  # degrees → metres (approx)
+            if dem_res_m > 0:
+                stride = max(1, int(self.hmin / dem_res_m / 2))
+                _logger.info(
+                    f"Auto-computed stride={stride} "
+                    f"(hmin={self.hmin} m, dem_res≈{dem_res_m:.1f} m/px, "
+                    f"dx={self.dx:.6f} deg)"
+                )
 
         tria_list = []
         coords_list = []
@@ -312,6 +368,33 @@ class HfunRaster(BaseHfun, Raster):
             # --- Stride Logic (Optional Optimization) ---
             # If stride is provided, we read a subset of data to save memory
             step = stride if stride is not None else 1
+
+            # Per-window point-count cap: if the strided field still exceeds
+            # _GMSH_MAX_SIZING_PTS, increase step further. This protects
+            # against geographically large tiles (e.g. a global GEBCO
+            # background) where the resolution-based auto-stride computes
+            # stride=1 (correct — the DEM is coarse) but the tile covers such
+            # a large geographic extent that total points are still ~100 M+.
+            # Only applied when using gmsh (the engine that uses the sizing
+            # field); triangle builds its own triangulation and is unaffected.
+            if mesh_engine == 'gmsh':
+                n_pts_strided = (win.height // step) * (win.width // step)
+                if n_pts_strided > _GMSH_MAX_SIZING_PTS:
+                    step = max(
+                        step,
+                        math.ceil(
+                            math.sqrt(
+                                win.height * win.width / _GMSH_MAX_SIZING_PTS
+                            )
+                        )
+                    )
+                    _logger.info(
+                        f"Window {i_win+1}/{len(iter_windows)}: stride "
+                        f"increased to {step} to cap gmsh sizing field at "
+                        f"≤{_GMSH_MAX_SIZING_PTS:,} pts "
+                        f"(tile {win.width}×{win.height} px, "
+                        f"was {n_pts_strided:,} pts)"
+                    )
 
             # Read window
             start = time()
@@ -807,7 +890,7 @@ class HfunRaster(BaseHfun, Raster):
             expansion_rate: Optional[float] = None,
             target_size: Optional[float] = None,
             *, # kwarg-only comes after this
-            pool: Pool,
+            pool: Optional[Pool] = None,
             ) -> None:
         """Add refinement as a region of fixed size with an optional rate
 
@@ -1019,7 +1102,7 @@ class HfunRaster(BaseHfun, Raster):
             target_size: float = 200,
             expansion_rate: Optional[float] = None,
             *,
-            pool: Pool,
+            pool: Optional[Pool] = None,
             tolerance: Optional[float] = None
             ) -> None:
         """Add refinement for auto detected channels
@@ -1089,7 +1172,7 @@ class HfunRaster(BaseHfun, Raster):
             target_size: Optional[float] = None,
             max_verts: int = 200,
             *, # kwarg-only comes after this
-            pool: Pool,
+            pool: Optional[Pool] = None,
             ) -> None:
         """Add refinement for specified linestring `feature`
 
@@ -1169,6 +1252,10 @@ class HfunRaster(BaseHfun, Raster):
                              'global hmin has been set.')
         if target_size <= 0:
             raise ValueError("Argument target_size must be greater than zero.")
+
+        # `pool` may be None (sequential). KDTree still needs a worker count.
+        n_workers = 1 if pool is None else pool._processes  # pylint: disable=W0212
+
         with self.modifying_raster(driver='GTiff') as dst:
             iter_windows = list(self.iter_windows())
             tot = len(iter_windows)
@@ -1179,7 +1266,8 @@ class HfunRaster(BaseHfun, Raster):
 
                 _logger.info('Repartitioning features...')
                 start = time()
-                res = pool.starmap(
+                res = utils.pool_starmap(
+                    pool,
                     utils.repartition_features,
                     [(linestring, max_verts) for linestring in feature]
                     )
@@ -1200,7 +1288,8 @@ class HfunRaster(BaseHfun, Raster):
                     _logger.info(
                             f"Transform creation took {time() - start2:f}")
                     start2 = time()
-                    win_feature = pool.starmap(
+                    win_feature = utils.pool_starmap(
+                        pool,
                         ops.transform,
                         [(transformer.transform, linestring)
                          for linestring in win_feature]
@@ -1208,7 +1297,8 @@ class HfunRaster(BaseHfun, Raster):
                     _logger.info(
                             f"Transform apply took {time() - start2:f}")
 
-                transformed_features = pool.starmap(
+                transformed_features = utils.pool_starmap(
+                    pool,
                     utils.transform_linestring,
                     [(linestring, target_size) for linestring in win_feature]
                 )
@@ -1223,6 +1313,15 @@ class HfunRaster(BaseHfun, Raster):
                         for linestring in geom.geoms:
                             points.extend(linestring.coords)
                 _logger.info(f'Point concatenation took {time()-start}.')
+
+                # No feature points intersect this window (e.g. add_channel
+                # detected no channels on this tile). There is nothing to
+                # refine here, so skip the KDTree/query which would otherwise
+                # raise "data must be of shape (n, m)" on an empty array.
+                if len(points) == 0:
+                    _logger.info(
+                        'No feature points in this window; skipping.')
+                    continue
 
                 _logger.info('Generating KDTree...')
                 start = time()
@@ -1239,12 +1338,12 @@ class HfunRaster(BaseHfun, Raster):
                 if self.hmax:
                     r = (self.hmax - target_size) / (expansion_rate * target_size)
                     near_dists, neighbors = tree.query(
-                        xy, workers=pool._processes, distance_upper_bound=r)
+                        xy, workers=n_workers, distance_upper_bound=r)
                     distances = r * np.ones(len(xy))
                     mask = np.logical_not(np.isinf(near_dists))
                     distances[mask] = near_dists[mask]
                 else:
-                    distances, _ = tree.query(xy, workers=pool._processes)
+                    distances, _ = tree.query(xy, workers=n_workers)
                 _logger.info(f'Querying KDTree took {time()-start}.')
                 values = expansion_rate*target_size*distances + target_size
                 values = values.reshape(window.height, window.width).astype(

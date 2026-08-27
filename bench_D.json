@@ -1,0 +1,32 @@
+{
+  "config": "D",
+  "description": "C + patch + topo-bound constraint",
+  "tiles": 6,
+  "size": 120,
+  "nprocs": 6,
+  "timings": {
+    "serial": {
+      "contours": 4.834593802999734,
+      "flow_limiters": 0.5146841160021722,
+      "const_val": 0.8474121180006478,
+      "linefeatures": 0.05975963400123874,
+      "patch": 1.1599557449990243,
+      "channels": 5.357253145000868,
+      "constraints": 0.5093044549976184,
+      "total": 13.282963016001304
+    },
+    "parallel": {
+      "contours": 1.6503351549981744,
+      "flow_limiters": 0.348978605998127,
+      "const_val": 0.43453361799765844,
+      "linefeatures": 0.06287690300086979,
+      "patch": 1.4949454870002228,
+      "channels": 6.175373923000734,
+      "constraints": 0.35570168100093724,
+      "total": 10.522745372996724
+    }
+  },
+  "equivalence_problems": {
+    "parallel": []
+  }
+}
