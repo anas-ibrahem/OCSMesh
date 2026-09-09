@@ -139,6 +139,9 @@ def _configure_mpi_environment():
         # and simply warn. But at import time this should never be the case.
         try:
             mp.set_start_method('forkserver', force=True)
+            # Without this the forkserver process imports only __main__, so
+            # every Pool worker pays the full `import ocsmesh` cost.
+            mp.set_forkserver_preload(['ocsmesh'])
         except RuntimeError:
             current = mp.get_start_method(allow_none=True)
             if current != 'forkserver':
