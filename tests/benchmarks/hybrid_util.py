@@ -104,12 +104,26 @@ def plan_cores(comm, override=None):
 
 
 def format_plan(plan):
-    return (
-        f"  cores/rank: {plan['cores_per_rank']}  [{plan['source']}]\n"
+    lines = [
+        f"  cores/rank: {plan['cores_per_rank']}  [{plan['source']}]",
         f"  ranks: {plan['world_size']} "
         f"({plan['world_size'] - 1 if plan['world_size'] > 1 else 1} workers), "
-        f"cores in flight: {plan['total_cores_used']}"
-    )
+        f"cores in flight: {plan['total_cores_used']}",
+    ]
+    if plan['world_size'] > 1 and plan['cores_per_rank'] == 1:
+        best = max(2, plan['affinity_cores'] // 4)
+        lines.append(
+            f"  WARNING: 1 core/rank -> mpi_hybrid degenerates into "
+            f"mpi_no_pool. You asked for {plan['world_size'] - 1} worker "
+            f"ranks on {plan['affinity_cores']} cores. For a real hybrid "
+            f"test use fewer, fatter ranks, e.g. `-n {best + 1}` "
+            f"({best} tiles x {plan['affinity_cores'] // best} cores).")
+    if plan['ranks_on_node'] > plan['affinity_cores']:
+        lines.append(
+            f"  WARNING: {plan['ranks_on_node']} ranks on "
+            f"{plan['affinity_cores']} cores - the node is oversubscribed, "
+            f"timings will be meaningless.")
+    return '\n'.join(lines)
 
 
 def resolve_tiles(comm, requested):

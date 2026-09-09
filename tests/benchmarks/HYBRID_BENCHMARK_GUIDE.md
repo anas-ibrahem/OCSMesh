@@ -52,6 +52,34 @@ mpiexec -n 16 ...   →  15 tiles, 80 / 15 = 5 cores per worker rank
 
 And under SLURM, `--cpus-per-task=5` is honoured as-is.
 
+### Choosing `-n`
+
+`-n` controls **both** knobs, because tiles = ranks - 1:
+
+```
+tiles       = n - 1
+cores/rank  = node_cores / (n - 1)
+```
+
+So on a 16-core box, `-n 16` gives 15 tiles at **1 core each** — that is
+`mpi_no_pool` wearing a hybrid hat, and rank 0 plus 15 workers fully
+pack the node with nothing left for Pools. Pick `n` so that
+`node_cores / (n - 1)` is >= 3:
+
+| node cores | good `-n` | tiles x cores |
+|---|---|---|
+| 16 | 5 | 4 x 4 |
+| 32 | 9 | 8 x 4 |
+| 80 | 16 | 15 x 5 |
+
+To test 15 tiles on a small node anyway, keep the ranks fat and let each
+rank take several tiles is *not* supported — instead pin the budget
+explicitly with `--tiles 15 --cores-per-rank N` and accept the
+oversubscription, or use `--mode mpi_no_pool` for that shape.
+
+The script prints a WARNING when `cores/rank` collapses to 1 or when the
+node is oversubscribed.
+
 ## Output
 
 Each mode prints per-stage timing plus a resource line:
@@ -211,8 +239,24 @@ All four scripts share the same flags:
 
 On a laptop with tiny tiles (`--size <= 120`) expect **no** speedup: MPI
 and Pool startup dominates. Those runs are for correctness, not timing.
+For timing runs use `--size 600` or larger so each tile is seconds of
+real work, not milliseconds.
 
 ## Troubleshooting
+
+### Log is drowning in rasterio / geopandas warnings
+Every rank and every Pool worker re-emits them. Silence them:
+```bash
+PYTHONWARNINGS=ignore mpiexec -n 5 python tests/benchmarks/benchmark_hybrid_B.py
+```
+
+### mpi_hybrid is *slower* than serial_mp
+Usually one of:
+1. `cores/rank: 1` — see [Choosing `-n`](#choosing--n).
+2. `ranks > node cores` — the node is oversubscribed and ranks fight
+   for CPU with the Pools.
+3. Tiles too small — raise `--size`; per-tile work must exceed the
+   forkserver + task-dispatch overhead.
 
 ### "Fork support not available" warning
 The `forkserver` start method should prevent this. If you still see it:
