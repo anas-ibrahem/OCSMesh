@@ -275,13 +275,24 @@ Idle ranks spin in `recv`. Set `OMPI_MCA_mpi_yield_when_idle=1`, and do
 not run the `serial_mp` baseline under `srun`/`mpiexec` — the idle ranks
 compete with it for CPU and skew the baseline.
 
-### cores/rank is 1 when you expected more
-Check the `[source]` tag in the header line the script prints. If it says
-`affinity (launcher-bound)`, the launcher pinned each rank to one core:
+### cores/rank is lower than expected
+Check the `[source]` tag in the header the script prints. If it says
+`affinity (launcher-bound)`, the launcher sliced the node up and each
+rank is pinned to a subset, so its Pool cannot grow past that slice.
+Verify what a rank actually sees:
 ```bash
-srun --cpus-per-task=5 ...        # SLURM
-mpiexec --bind-to none -n 16 ...  # Open MPI
+mpiexec -n 5 python -c "import os; print(len(os.sched_getaffinity(0)))"
 ```
+If that prints fewer cores than `nproc`, disable pinning \u2014 the flag
+depends on the MPI implementation (`mpiexec --version` tells you which):
+```bash
+export I_MPI_PIN=0                              # Intel MPI
+export OMPI_MCA_hwloc_base_binding_policy=none  # Open MPI
+export HYDRA_BINDING=none                       # MPICH / Hydra
+srun --cpus-per-task=5 ...                      # SLURM: size it explicitly
+```
+Note that `--bind-to none` is an Open MPI flag; Intel MPI accepts it
+silently and ignores it.
 
 ### Hercules CPU count
 Hercules nodes have SMT (hyperthreading). Each "CPU" in SLURM = 1 hardware thread.
