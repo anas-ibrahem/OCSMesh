@@ -117,8 +117,15 @@ def _configure_mpi_environment():
 
     Pins numerical library threads (OpenMP/MKL/OpenBLAS) to 1 to prevent
     thread oversubscription when multiple MPI ranks run on the same node,
-    and sets the multiprocessing start method to 'spawn' to avoid fork
+    and sets the multiprocessing start method to 'forkserver' to avoid fork
     deadlocks with open MPI communicators.
+
+    Why 'forkserver' instead of 'spawn':
+    - 'spawn' re-launches a full Python interpreter per Pool worker — slow.
+    - 'forkserver' pre-forks a clean server process (before MPI_Init state
+      is inherited), then forks workers from that server — fast, MPI-safe.
+    - This matters for the hybrid MPI + Pool pattern where each MPI rank
+      creates an internal Pool for intra-tile parallelism (add_feature).
     """
     if _is_mpi_env_detected():
         for var in _MPI_THREAD_PIN_VARS:
@@ -131,13 +138,13 @@ def _configure_mpi_environment():
         # force=True raises RuntimeError — in that case we cannot change it
         # and simply warn. But at import time this should never be the case.
         try:
-            mp.set_start_method('spawn', force=True)
+            mp.set_start_method('forkserver', force=True)
         except RuntimeError:
             current = mp.get_start_method(allow_none=True)
-            if current != 'spawn':
+            if current != 'forkserver':
                 import warnings
                 warnings.warn(
-                    f"Could not set multiprocessing start method to 'spawn' "
+                    f"Could not set multiprocessing start method to 'forkserver' "
                     f"(current: '{current}'). Pool workers will use '{current}' "
                     f"and may inherit SLURM MPI env vars, causing PMI_Init "
                     f"errors. Ensure 'import ocsmesh' occurs before any "
