@@ -58,6 +58,29 @@ def node_local_size(comm):
         node.Free()
 
 
+def node_cores(comm):
+    """Cores usable on this node by this job, and ranks sharing the node.
+
+    The union of every local rank's affinity mask. When the launcher pins
+    ranks to disjoint core subsets, each rank's own mask is only its
+    slice, so the union is what the job actually owns on the node.
+    """
+    try:
+        mask = set(os.sched_getaffinity(0))
+    except AttributeError:
+        mask = set(range(os.cpu_count() or 1))
+    if comm is None or comm.Get_size() == 1:
+        return len(mask), 1
+    from mpi4py import MPI
+    node = comm.Split_type(MPI.COMM_TYPE_SHARED)
+    try:
+        masks = node.allgather(mask)
+        local = node.Get_size()
+    finally:
+        node.Free()
+    return len(set().union(*masks)), local
+
+
 def plan_cores(comm, override=None):
     """Decide how many Pool workers this rank may start.
 
@@ -65,7 +88,8 @@ def plan_cores(comm, override=None):
 
     ``override``            explicit ``--cores-per-rank``
     ``SLURM_CPUS_PER_TASK`` the launcher already sized the rank
-    bound mask             affinity < ranks on node -> launcher pinned us
+    bound mask             this rank owns fewer cores than the node has,
+                           so the launcher already pinned it
     divided                node cores / worker ranks on this node
 
     Rank 0 is a coordinator and runs no tiles, so it is excluded from the
@@ -73,8 +97,8 @@ def plan_cores(comm, override=None):
 
     Returns a dict with the plan and enough context to print it.
     """
-    total = affinity_cores()
-    local = node_local_size(comm)
+    mine = affinity_cores()
+    on_node, local = node_cores(comm)
     size = comm_size(comm)
     workers_here = max(1, local - 1) if local > 1 else 1
 
@@ -84,17 +108,18 @@ def plan_cores(comm, override=None):
         cores = max(1, int(os.environ['SLURM_CPUS_PER_TASK']))
         source = 'SLURM_CPUS_PER_TASK'
     elif size == 1:
-        cores, source = total, 'affinity (no MPI)'
-    elif total < local:
+        cores, source = mine, 'affinity (no MPI)'
+    elif mine < on_node:
         # Launcher already pinned each rank to a disjoint core subset.
-        cores, source = total, 'affinity (launcher-bound)'
+        cores, source = mine, 'affinity (launcher-bound)'
     else:
-        cores = max(1, total // workers_here)
-        source = f'auto ({total} cores / {workers_here} worker ranks on node)'
+        cores = max(1, on_node // workers_here)
+        source = f'auto ({on_node} cores / {workers_here} worker ranks on node)'
 
     return {
         'cores_per_rank': cores,
-        'affinity_cores': total,
+        'affinity_cores': mine,
+        'node_cores': on_node,
         'ranks_on_node': local,
         'worker_ranks_on_node': workers_here,
         'world_size': size,
@@ -108,21 +133,28 @@ def format_plan(plan):
         f"  cores/rank: {plan['cores_per_rank']}  [{plan['source']}]",
         f"  ranks: {plan['world_size']} "
         f"({plan['world_size'] - 1 if plan['world_size'] > 1 else 1} workers), "
+        f"node cores: {plan['node_cores']}, "
         f"cores in flight: {plan['total_cores_used']}",
     ]
     if plan['world_size'] > 1 and plan['cores_per_rank'] == 1:
-        best = max(2, plan['affinity_cores'] // 4)
+        best = max(2, plan['node_cores'] // 4)
         lines.append(
             f"  WARNING: 1 core/rank -> mpi_hybrid degenerates into "
             f"mpi_no_pool. You asked for {plan['world_size'] - 1} worker "
-            f"ranks on {plan['affinity_cores']} cores. For a real hybrid "
+            f"ranks on {plan['node_cores']} cores. For a real hybrid "
             f"test use fewer, fatter ranks, e.g. `-n {best + 1}` "
-            f"({best} tiles x {plan['affinity_cores'] // best} cores).")
-    if plan['ranks_on_node'] > plan['affinity_cores']:
+            f"({best} tiles x {plan['node_cores'] // best} cores).")
+    if plan['total_cores_used'] > plan['node_cores']:
         lines.append(
-            f"  WARNING: {plan['ranks_on_node']} ranks on "
-            f"{plan['affinity_cores']} cores - the node is oversubscribed, "
-            f"timings will be meaningless.")
+            f"  WARNING: {plan['total_cores_used']} cores requested on a "
+            f"{plan['node_cores']}-core node - oversubscribed, timings "
+            f"will be pessimistic.")
+    if plan['affinity_cores'] < plan['node_cores']:
+        lines.append(
+            f"  NOTE: rank 0 is pinned to {plan['affinity_cores']} of "
+            f"{plan['node_cores']} cores, so the serial_mp baseline cannot "
+            f"use the whole node. Run `--mode serial_mp` without a launcher "
+            f"for a fair baseline.")
     return '\n'.join(lines)
 
 
