@@ -499,6 +499,10 @@ class _ChannelRefineCollector:
                     fp.write(crs.to_json())
                 self._container.append((feather_path, crs_path))
 
+    @property
+    def files(self) -> List[Tuple[Path, Path]]:
+        return list(self._container)
+
     def __iter__(self):
         """Iterator method for this collection object
 
@@ -719,15 +723,19 @@ def _constraints_task_worker(task: dict):
     }
 
 
-def _contours_task_worker(task: dict):
+def _replay_shapes_task_worker(task: dict, method_name: str, shape_kwarg: str):
     """
-    A self-contained worker for applying contour refinements to a single
+    A self-contained worker for applying one refinement kind to a single
     HfunRaster.
 
-    The coordinator has already extracted the contours to feather files on
+    The coordinator has already extracted the shapes to feather files on
     disk, so this worker only needs plain paths: it rebuilds the HfunRaster
     inside the child process (raster handles cannot be pickled), replays
-    every contour line onto it, and saves the result to a new file.
+    every shape onto it, and saves the result to a new file.
+
+    ``method_name`` is the ``HfunRaster`` method to call (``add_feature``
+    for contours, ``add_patch`` for channels) and ``shape_kwarg`` is the
+    name that method uses for the geometry argument.
     """
 
     # 1. Unpack the simple, pickleable task description
@@ -737,7 +745,7 @@ def _contours_task_worker(task: dict):
     output_path = task['output_path']
     global_hmin = task['global_hmin']
     global_hmax = task['global_hmax']
-    contour_files = task['contour_files']
+    shape_files = task['shape_files']
 
     try:
         # 2. Create the necessary Raster and HfunRaster instances INSIDE
@@ -753,13 +761,14 @@ def _contours_task_worker(task: dict):
         # Taken from the rebuilt object rather than sent in the task, so
         # it is exactly the CRS the serial path would compare against.
         hfun_crs = worker_hfun.crs
+        apply_shape = getattr(worker_hfun, method_name)
 
-        # 3. Replay every contour line onto this raster.
-        for feather_path, crs_path in contour_files:
+        # 3. Replay every shape onto this raster.
+        for feather_path, crs_path in shape_files:
             gdf = gpd.read_feather(feather_path)
             with open(crs_path) as fp:
-                # Read the CRS the same way _RefinementContourCollector
-                # does, so serial and parallel see identical input.
+                # Read the CRS the same way the collector does, so serial
+                # and parallel see identical input.
                 gdf = gdf.set_crs(
                     CRS.from_json(fp.read()), allow_override=True)
 
@@ -782,9 +791,9 @@ def _contours_task_worker(task: dict):
                     shape = ops.transform(transformer.transform, shape)
 
                 # nprocs=1 -> add_pool_args passes pool=None -> no child
-                # process. Required: we are already inside a daemon worker.
-                worker_hfun.add_feature(**{
-                    'feature': shape,
+                # process. Required: we may be inside a daemon worker.
+                apply_shape(**{
+                    shape_kwarg: shape,
                     'expansion_rate': row.expansion_rate,
                     'target_size': row.target_size,
                     'nprocs': 1
@@ -806,6 +815,16 @@ def _contours_task_worker(task: dict):
             'original_index': original_index,
             'error': traceback.format_exc()
         }
+
+
+def _contours_task_worker(task: dict):
+    """Apply contour refinements to a single HfunRaster."""
+    return _replay_shapes_task_worker(task, 'add_feature', 'feature')
+
+
+def _channels_task_worker(task: dict):
+    """Apply channel refinements to a single HfunRaster."""
+    return _replay_shapes_task_worker(task, 'add_patch', 'multipolygon')
 
 
 def _meshdata_task_worker(task: dict):
@@ -894,6 +913,8 @@ def _meshdata_task_worker(task: dict):
 
 # Register collector-specific MPI operations
 MPIExecutor.register_op('meshdata', _meshdata_task_worker)
+MPIExecutor.register_op('contours', _contours_task_worker)
+MPIExecutor.register_op('channels', _channels_task_worker)
 
 
 
@@ -2066,17 +2087,12 @@ class HfunCollector(BaseHfun):
         See Also
         --------
         _apply_contours_serial :
-        _apply_contours_parallel :
+        _apply_shape_refinements :
         """
 
-        # The 'fast' method builds a throw-away big raster that is not in
-        # self._hfun_list, so the parallel path (which writes results back
-        # by list position) cannot be used for it.
-        if (self._method != 'fast'
-                and self.execution_mode in ('parallel', 'mpi')
-                and self._nprocs > 1):
+        if self._can_distribute_refinements():
             _logger.info("Applying contours using PARALLEL method.")
-            self._apply_contours_parallel(apply_to)
+            self._apply_shape_refinements('contours', apply_to)
         else:
             _logger.info("Applying contours using SERIAL method.")
             self._apply_contours_serial(apply_to)
@@ -2145,34 +2161,32 @@ class HfunCollector(BaseHfun):
             p.join()
 
 
-    def _apply_contours_parallel(
-            self,
-            apply_to: Optional[SizeFuncList] = None
-            ) -> None:
-        """Internal: apply specified contours in parallel.
+    # collector attribute, HfunRaster method, geometry kwarg name
+    _SHAPE_REFINEMENTS = {
+        'contours': ('_contour_coll', 'add_feature', 'feature'),
+        'channels': ('_channels_coll', 'add_patch', 'multipolygon'),
+    }
 
-        Uses the same 3-phase pattern as ``_apply_flow_limiters_parallel``:
+    def _can_distribute_refinements(self) -> bool:
+        """True when contours/channels may go through the task path.
 
-        1. **Preparation** — extract the contours once on the coordinator,
-           then build one pickleable task dict per raster size function.
-        2. **Execution** — ``Pool.map()`` sends tasks to
-           ``_contours_task_worker`` processes.
-        3. **Integration** — replace ``self._hfun_list`` entries with new
-           ``HfunRaster`` objects built from the worker output files.
+        The 'fast' method builds a throw-away big raster that is not in
+        ``self._hfun_list``, so the task path (which writes results back
+        by list position) cannot be used for it.
+        """
 
-        Mesh size functions and the base mesh are handled on the
-        coordinator, because only rasters can be rebuilt from a file path
-        inside a worker.
+        if self._method == 'fast':
+            return False
+        if self.execution_mode == 'mpi':
+            # nprocs sizes the intra-rank Pool; tile distribution is
+            # across ranks, so nprocs == 1 is still a valid MPI run.
+            return True
+        return self.execution_mode == 'parallel' and self._nprocs > 1
 
-        Parameters
-        ----------
-        apply_to : SizeFuncList or None, default=None
-            Size functions on which contours must be applied. If `None`
-            all inputs are used to apply the calculated contours.
+    def _split_refinement_targets(self, apply_to):
+        """Split size functions into distributable rasters and the rest.
 
-        Returns
-        -------
-        None
+        Returns ``(raster_hfun_list, {index: hfun}, [hfun, ...])``.
         """
 
         raster_hfun_list = [
@@ -2200,85 +2214,170 @@ class HfunCollector(BaseHfun):
             else:
                 serial_targets.append(hfun)
 
-        # The worker rebuilds a bare HfunRaster, so any constraint already
-        # attached to the original would be silently dropped. Safe today
-        # because _apply_features runs contours first and constraints last.
-        if any(h._constraints  # pylint: disable=W0212
-               for h in parallel_targets.values()):
+        return raster_hfun_list, parallel_targets, serial_targets
+
+    def _dispatch_refinement_tasks(self, kind, tasks):
+        """Run prepared refinement tasks via MPI ranks or a local Pool.
+
+        Returns the result dicts on the coordinator, or ``None`` on an
+        MPI worker rank. ``MPIExecutor.run()`` is collective, so every
+        rank must reach it — including ranks holding no tasks.
+        """
+
+        if self.execution_mode == 'mpi':
+            raw_results = MPIExecutor.run(
+                tasks, work_dir=self._work_dir, fail_fast=True)
+            if raw_results is None:
+                return None
+            return [raw_results[idx] for idx in sorted(raw_results)]
+
+        if not tasks:
+            return []
+
+        _logger.info(
+            f"Start parallel execution for {len(tasks)} {kind} tasks")
+        # Cap workers at the number of tasks: spawning more workers
+        # than tasks wastes spawn time and memory with idle processes.
+        n_workers = min(self._nprocs, len(tasks))
+        worker = (_contours_task_worker if kind == 'contours'
+                  else _channels_task_worker)
+        with Pool(processes=n_workers) as p:
+            results = p.map(worker, tasks)
+        _logger.info("Parallel execution finished.")
+
+        # Fail fast. Skipping a failed task would leave a size function
+        # quietly missing its refinement, which is worse than stopping.
+        failures = [r for r in results if r['status'] == 'error']
+        if failures:
+            msgs = [f"  idx {r['original_index']}: {r['error']}"
+                    for r in failures]
             raise RuntimeError(
-                "_apply_contours_parallel cannot run after constraints "
-                "have been added; contours must be applied first.")
+                f"{len(failures)} {kind} worker(s) failed:\n"
+                + "\n".join(msgs))
+        return results
 
-        # Contours go under _work_dir rather than a local temp dir: an MPI
-        # job spreads over nodes, and /tmp is not shared between them.
-        contour_dir = os.path.join(self._work_dir, 'contours')
-        os.makedirs(contour_dir, exist_ok=True)
+    def _integrate_refinement_results(self, kind, results):
+        """Replace refined size functions with the worker output files."""
 
+        for result in results:
+            idx = result['original_index']
+            original_hfun = self._hfun_list[idx]
+            _logger.info(
+                f"Update HfunCollector with {kind} raster at idx {idx}.")
+            self._hfun_list[idx] = HfunRaster(
+                raster=original_hfun.raster,
+                hmin=original_hfun.hmin,
+                hmax=original_hfun.hmax,
+                verbosity=original_hfun.verbosity,
+                initial_value=result['output_path']
+            )
+
+    def _apply_shape_refinements(
+            self,
+            kind: str,
+            apply_to: Optional[SizeFuncList] = None
+            ) -> None:
+        """Internal: apply contours or channels through the task path.
+
+        Uses the same 3-phase pattern as ``_apply_flow_limiters_parallel``:
+
+        1. **Preparation** — extract the shapes once on the coordinator,
+           then build one pickleable task dict per raster size function.
+        2. **Execution** — the tasks go to ``Pool.map()`` in 'parallel'
+           mode, or to ``MPIExecutor.run()`` in 'mpi' mode, where each
+           rank refines a different raster.
+        3. **Integration** — replace ``self._hfun_list`` entries with new
+           ``HfunRaster`` objects built from the worker output files.
+
+        Mesh size functions and the base mesh are handled on the
+        coordinator, because only rasters can be rebuilt from a file path
+        inside a worker.
+
+        Parameters
+        ----------
+        kind : {'contours', 'channels'}
+            Which refinement collection to apply.
+        apply_to : SizeFuncList or None, default=None
+            Size functions on which the refinement must be applied. If
+            `None` all inputs are used.
+
+        Returns
+        -------
+        None
+        """
+
+        coll_attr, method_name, shape_kwarg = self._SHAPE_REFINEMENTS[kind]
+        coll = getattr(self, coll_attr)
+        # On worker ranks the coordinator's task list is the one that
+        # counts, so they skip preparation and go straight to the
+        # collective dispatch.
+        is_coordinator = (self.execution_mode != 'mpi'
+                          or MPIExecutor.is_manager())
+
+        tasks = []
+        serial_targets = []
+        shape_dir = None
         try:
-            # Phase 1: PREPARATION (Coordinator)
-            # Contours are ONLY extracted from raster sources
-            self._contour_coll.calculate(raster_hfun_list, contour_dir)
-            contour_file_list = self._contour_coll.files
+            if is_coordinator:
+                # Phase 1: PREPARATION (Coordinator)
+                (raster_hfun_list, parallel_targets,
+                 serial_targets) = self._split_refinement_targets(apply_to)
 
-            tasks = []
-            for idx, hfun in parallel_targets.items():
-                task = {
-                    'original_index': idx,
-                    'hfun_input_path': hfun.tmpfile,
-                    'topo_input_path': hfun._raster.path,  # pylint: disable=W0212
-                    'output_path': os.path.join(
-                        self._work_dir, f"contours_result_{idx}.tif"),
-                    'global_hmin': hfun._hmin,  # pylint: disable=W0212
-                    'global_hmax': hfun._hmax,  # pylint: disable=W0212
-                    'contour_files': contour_file_list,
-                }
-                tasks.append(task)
-
-            if not tasks:
-                _logger.info("No contour tasks to execute.")
-            else:
-                # Phase 2: EXECUTION
-                _logger.info(
-                    f"Start parallel execution for {len(tasks)} contour tasks")
-                # Cap workers at the number of tasks: spawning more workers
-                # than tasks wastes spawn time and memory with idle processes.
-                n_workers = min(self._nprocs, len(tasks))
-                with Pool(processes=n_workers) as p:
-                    results = p.map(_contours_task_worker, tasks)
-                _logger.info("Parallel execution finished.")
-
-                # Fail fast. Skipping a failed task would leave a size
-                # function quietly missing its contours, which is worse
-                # than stopping here.
-                failures = [r for r in results if r['status'] == 'error']
-                if failures:
-                    msgs = [f"  idx {r['original_index']}: {r['error']}"
-                            for r in failures]
+                # The worker rebuilds a bare HfunRaster, so any constraint
+                # already attached to the original would be silently
+                # dropped. Safe today because _apply_features runs
+                # contours/channels first and constraints last.
+                if any(h._constraints  # pylint: disable=W0212
+                       for h in parallel_targets.values()):
                     raise RuntimeError(
-                        f"{len(failures)} contour worker(s) failed:\n"
-                        + "\n".join(msgs))
+                        f"_apply_shape_refinements({kind!r}) cannot run "
+                        f"after constraints have been added; refinements "
+                        f"must be applied first.")
 
-                # Phase 3: INTEGRATION
-                for result in results:
-                    idx = result['original_index']
-                    original_hfun = self._hfun_list[idx]
-                    _logger.info(
-                        f"Update HfunCollector with contour raster at idx {idx}.")
-                    self._hfun_list[idx] = HfunRaster(
-                        raster=original_hfun.raster,
-                        hmin=original_hfun.hmin,
-                        hmax=original_hfun.hmax,
-                        verbosity=original_hfun.verbosity,
-                        initial_value=result['output_path']
-                    )
+                # Shapes go under _work_dir rather than a local temp dir:
+                # an MPI job spreads over nodes, and /tmp is not shared
+                # between them.
+                shape_dir = os.path.join(self._work_dir, kind)
+                os.makedirs(shape_dir, exist_ok=True)
+
+                # Shapes are ONLY extracted from raster sources
+                coll.calculate(raster_hfun_list, shape_dir)
+                shape_file_list = coll.files
+
+                tasks = [
+                    {
+                        'op': kind,
+                        'original_index': idx,
+                        'hfun_input_path': hfun.tmpfile,
+                        'topo_input_path': hfun._raster.path,  # pylint: disable=W0212
+                        'output_path': os.path.join(
+                            self._work_dir, f"{kind}_result_{idx}.tif"),
+                        'global_hmin': hfun._hmin,  # pylint: disable=W0212
+                        'global_hmax': hfun._hmax,  # pylint: disable=W0212
+                        'shape_files': shape_file_list,
+                    }
+                    for idx, hfun in parallel_targets.items()
+                ]
+                if not tasks:
+                    _logger.info(f"No {kind} tasks to execute.")
+
+            # Phase 2: EXECUTION
+            results = self._dispatch_refinement_tasks(kind, tasks)
+            if results is None:
+                # MPI worker rank — the coordinator owns the results.
+                return
+
+            # Phase 3: INTEGRATION
+            self._integrate_refinement_results(kind, results)
 
             # Mesh size functions and the base mesh, done here. This has to
-            # happen before contour_dir is deleted, because iterating
-            # _contour_coll re-reads the feather files from disk.
+            # happen before shape_dir is deleted, because iterating the
+            # collection re-reads the feather files from disk.
             if serial_targets:
                 with Pool(processes=self._nprocs) as p:
                     for hfun in serial_targets:
-                        for gdf in self._contour_coll:
+                        apply_shape = getattr(hfun, method_name)
+                        for gdf in coll:
                             for row in gdf.itertuples():
                                 _logger.debug(row)
                                 shape = row.geometry
@@ -2294,17 +2393,48 @@ class HfunCollector(BaseHfun):
                                         gdf.crs, hfun.crs, always_xy=True)
                                     shape = ops.transform(
                                             transformer.transform, shape)
-                                hfun.add_feature(**{
-                                    'feature': shape,
+                                apply_shape(**{
+                                    shape_kwarg: shape,
                                     'expansion_rate': row.expansion_rate,
                                     'target_size': row.target_size,
                                     'pool': p
                                 })
         finally:
-            shutil.rmtree(contour_dir, ignore_errors=True)
+            if shape_dir is not None:
+                shutil.rmtree(shape_dir, ignore_errors=True)
 
 
     def _apply_channels(self, apply_to: Optional[SizeFuncList] = None) -> None:
+        """Internal: dispatch channel application to serial or parallel.
+
+        Parameters
+        ----------
+        apply_to : SizeFuncList or None, default=None
+            Size functions on which channels must be applied. If `None`
+            all inputs are used to apply the calculated channels.
+
+        Returns
+        -------
+        None
+
+        See Also
+        --------
+        _apply_channels_serial :
+        _apply_shape_refinements :
+        """
+
+        if self._can_distribute_refinements():
+            _logger.info("Applying channels using PARALLEL method.")
+            self._apply_shape_refinements('channels', apply_to)
+        else:
+            _logger.info("Applying channels using SERIAL method.")
+            self._apply_channels_serial(apply_to)
+
+
+    def _apply_channels_serial(
+            self,
+            apply_to: Optional[SizeFuncList] = None
+            ) -> None:
         """Internal: apply specified channel refinements.
 
         Parameters

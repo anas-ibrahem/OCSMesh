@@ -112,7 +112,7 @@ def run_serial_mp(tile_paths, nprocs):
 
 def run_mpi(tile_paths, nprocs):
     # Every rank must enter: MPIExecutor.run() is a collective call.
-    return build_and_run(tile_paths, nprocs, 'parallel')
+    return build_and_run(tile_paths, nprocs, 'mpi')
 
 
 def compare_values(values_a, values_b, label_a, label_b):

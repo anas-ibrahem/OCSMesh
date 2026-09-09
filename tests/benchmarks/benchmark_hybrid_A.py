@@ -106,7 +106,7 @@ def run_mpi(tile_paths, nprocs):
     # DIFF: every rank enters build_and_run — MPIExecutor.run() is a
     # collective call, so guarding it with `if rank == 0` deadlocks.
     """
-    return build_and_run(tile_paths, nprocs, 'parallel')
+    return build_and_run(tile_paths, nprocs, 'mpi')
 
 
 def compare_values(values_a, values_b, label_a, label_b):
