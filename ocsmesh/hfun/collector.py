@@ -746,6 +746,7 @@ def _replay_shapes_task_worker(task: dict, method_name: str, shape_kwarg: str):
     global_hmin = task['global_hmin']
     global_hmax = task['global_hmax']
     shape_files = task['shape_files']
+    worker_nprocs = task.get('worker_nprocs', 1)
 
     try:
         # 2. Create the necessary Raster and HfunRaster instances INSIDE
@@ -796,7 +797,7 @@ def _replay_shapes_task_worker(task: dict, method_name: str, shape_kwarg: str):
                     shape_kwarg: shape,
                     'expansion_rate': row.expansion_rate,
                     'target_size': row.target_size,
-                    'nprocs': 1
+                    'nprocs': worker_nprocs
                 })
 
         # 4. Save the final state to the designated output path.
@@ -2355,6 +2356,7 @@ class HfunCollector(BaseHfun):
                         'global_hmin': hfun._hmin,  # pylint: disable=W0212
                         'global_hmax': hfun._hmax,  # pylint: disable=W0212
                         'shape_files': shape_file_list,
+                        'worker_nprocs': self._nprocs if self.execution_mode == 'mpi' else 1
                     }
                     for idx, hfun in parallel_targets.items()
                 ]
