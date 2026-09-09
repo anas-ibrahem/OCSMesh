@@ -6,40 +6,31 @@ Same structure as benchmark_hybrid_A.py. See that file for full docs.
 # Channels call add_patch → add_feature internally, so they also
 # benefit from the hybrid MPI + Pool pattern.
 
-Run with SLURM:
-    srun --ntasks=16 --cpus-per-task=5 \\
-        python tests/benchmarks/benchmark_hybrid_B.py --mode mpi_hybrid \\
-        --tiles 15
+One command is enough — tiles and cores/rank are auto-detected:
+    mpiexec -n 16 python tests/benchmarks/benchmark_hybrid_B.py
 """
 
 import argparse
 import gc
 import json
-import os
 import sys
 import time
 from pathlib import Path
 import shutil
-import tempfile
 
 import numpy as np
 
 import ocsmesh
 from ocsmesh.hfun.raster import HfunRaster
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import hybrid_util as hu  # noqa: E402
+
 
 HMIN = 200
 HMAX = 5000
 CONFIG = 'B'
 CONFIG_DESC = 'contours + channels'
-
-
-def available_cores():
-    """Auto-detect cores from SLURM affinity mask."""
-    try:
-        return len(os.sched_getaffinity(0))
-    except AttributeError:
-        return os.cpu_count() or 1
 
 
 def make_tiles(out_dir, n_tiles, size):
@@ -96,26 +87,9 @@ def run_serial_mp(tile_paths, nprocs):
     return build_and_run(tile_paths, nprocs, 'serial')
 
 
-def run_mpi_no_pool(tile_paths):
-    from mpi4py import MPI
-    rank = MPI.COMM_WORLD.Get_rank()
-    if rank == 0:
-        return build_and_run(tile_paths, 1, 'parallel')
-    return None, None
-
-
-def run_mpi_hybrid(tile_paths):
-    from mpi4py import MPI
-    comm = MPI.COMM_WORLD
-    rank = comm.Get_rank()
-    size = comm.Get_size()
-    n_workers = size - 1
-    cores = available_cores()
-    if rank == 0:
-        print(f"  Workers: {n_workers}, cores/worker: {cores}, "
-              f"total: {n_workers * cores}")
-        return build_and_run(tile_paths, cores, 'parallel')
-    return None, None
+def run_mpi(tile_paths, nprocs):
+    # Every rank must enter: MPIExecutor.run() is a collective call.
+    return build_and_run(tile_paths, nprocs, 'parallel')
 
 
 def compare_values(values_a, values_b, label_a, label_b):
@@ -131,56 +105,72 @@ def compare_values(values_a, values_b, label_a, label_b):
     return problems
 
 
+def _fmt_stages(s):
+    return '  '.join(f'{k}: {v:.2f}s' for k, v in s.items())
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('--mode',
-                        choices=['serial_mp', 'mpi_no_pool', 'mpi_hybrid', 'all'],
-                        default='all')
-    parser.add_argument('--tiles', type=int, default=4)
-    parser.add_argument('--size', type=int, default=120)
-    parser.add_argument('--nprocs', type=int, default=4)
-    parser.add_argument('--json', type=Path, default=None)
+    hu.add_common_args(parser)
     args = parser.parse_args()
 
-    try:
-        from mpi4py import MPI
-        rank = MPI.COMM_WORLD.Get_rank()
-    except ImportError:
-        rank = 0
+    comm = hu.get_comm()
+    rank = hu.comm_rank(comm)
+    size = hu.comm_size(comm)
+    n_tiles = hu.resolve_tiles(comm, args.tiles)
+    plan = hu.plan_cores(comm, args.cores_per_rank or None)
+    serial_nprocs = args.nprocs or hu.affinity_cores()
 
-    tdir = Path(tempfile.mkdtemp(prefix='ocsmesh_hybridB_'))
+    tdir = hu.shared_tmpdir(comm, 'ocsmesh_hybridB_')
+    tile_paths = hu.tile_paths(tdir, n_tiles)
     try:
         if rank == 0:
             print(f'=== Config {CONFIG}: {CONFIG_DESC} ===')
-            print(f'Tiles: {args.tiles}, size: {args.size}x{args.size}')
+            print(f'Tiles: {n_tiles}, size: {args.size}x{args.size}')
             print(f'Start method: {__import__("multiprocessing").get_start_method()}')
-            print(f'Available cores: {available_cores()}')
+            print(hu.format_plan(plan))
+            make_tiles(tdir, n_tiles, args.size)
+        if size > 1:
+            comm.Barrier()
 
-        tile_paths = make_tiles(tdir, args.tiles, args.size)
         results = {}
 
         if args.mode in ('serial_mp', 'all') and rank == 0:
-            print(f'\n--- serial_mp (nprocs={args.nprocs}) ---')
-            s, v = run_serial_mp(tile_paths, args.nprocs)
-            results['serial_mp'] = {'stages': s, 'values': v}
-            print(f'  Contours: {s["contours"]:.2f}s  Channels: {s["channels"]:.2f}s  Total: {s["total"]:.2f}s')
+            print(f'\n--- serial_mp (Pool nprocs={serial_nprocs}) ---')
+            with hu.CpuMeter(cores=serial_nprocs) as meter:
+                s, v = run_serial_mp(tile_paths, serial_nprocs)
+            results['serial_mp'] = {'stages': s, 'values': v, 'meter': meter}
+            print(f'  {_fmt_stages(s)}')
+            print(f'  {meter.format()}')
 
-        if args.mode in ('mpi_no_pool', 'all'):
+        if args.mode in ('mpi_no_pool', 'all') and size > 1:
             if rank == 0:
-                print('\n--- mpi_no_pool ---')
-            s, v = run_mpi_no_pool(tile_paths)
+                print('\n--- mpi_no_pool (1 core/rank) ---')
+            with hu.CpuMeter(comm, cores=size - 1, collective=True) as meter:
+                s, v = run_mpi(tile_paths, 1)
             if rank == 0:
-                results['mpi_no_pool'] = {'stages': s, 'values': v}
-                print(f'  Contours: {s["contours"]:.2f}s  Channels: {s["channels"]:.2f}s  Total: {s["total"]:.2f}s')
+                results['mpi_no_pool'] = {'stages': s, 'values': v,
+                                          'meter': meter}
+                print(f'  {_fmt_stages(s)}')
+                print(f'  {meter.format()}')
 
-        if args.mode in ('mpi_hybrid', 'all'):
+        if args.mode in ('mpi_hybrid', 'all') and size > 1:
             if rank == 0:
-                print(f'\n--- mpi_hybrid ---')
-            s, v = run_mpi_hybrid(tile_paths)
+                print(f'\n--- mpi_hybrid '
+                      f'({plan["cores_per_rank"]} cores/rank) ---')
+            with hu.CpuMeter(comm, cores=plan['total_cores_used'],
+                             collective=True) as meter:
+                s, v = run_mpi(tile_paths, plan['cores_per_rank'])
             if rank == 0:
-                results['mpi_hybrid'] = {'stages': s, 'values': v}
-                print(f'  Contours: {s["contours"]:.2f}s  Channels: {s["channels"]:.2f}s  Total: {s["total"]:.2f}s')
+                results['mpi_hybrid'] = {'stages': s, 'values': v,
+                                         'meter': meter}
+                print(f'  {_fmt_stages(s)}')
+                print(f'  {meter.format()}')
+
+        if rank == 0 and size == 1 and args.mode != 'serial_mp':
+            print('\nMPI modes skipped: launch with '
+                  '`mpiexec -n <tiles+1> ...` to run them.')
 
         if rank == 0 and len(results) > 1:
             print('\n=== Comparison ===')
@@ -192,18 +182,24 @@ def main():
                     results[baseline_key]['values'], data['values'],
                     baseline_key, key)
                 status = 'OK' if not problems else 'FAIL'
-                speedup = results[baseline_key]['stages']['total'] / data['stages']['total']
-                print(f'{status}  {baseline_key} vs {key}: speedup {speedup:.2f}x')
+                speedup = (results[baseline_key]['meter'].wall
+                           / data['meter'].wall)
+                print(f'{status}  {baseline_key} vs {key}: '
+                      f'speedup {speedup:.2f}x')
                 for p in problems:
                     print(f'  {p}')
 
         if rank == 0 and args.json:
-            out = {k: v['stages'] for k, v in results.items()}
+            out = {k: dict(v['meter'].as_dict(), stages=v['stages'])
+                   for k, v in results.items()}
             args.json.write_text(json.dumps({
-                'config': CONFIG, 'tiles': args.tiles, 'results': out}, indent=2))
+                'config': CONFIG, 'tiles': n_tiles, 'plan': plan,
+                'results': out}, indent=2))
 
     finally:
         gc.collect()
+        if size > 1:
+            comm.Barrier()
         if rank == 0:
             shutil.rmtree(tdir, ignore_errors=True)
 
