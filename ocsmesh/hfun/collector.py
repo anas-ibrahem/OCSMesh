@@ -791,13 +791,16 @@ def _replay_shapes_task_worker(task: dict, method_name: str, shape_kwarg: str):
                 if transformer is not None:
                     shape = ops.transform(transformer.transform, shape)
 
-                # nprocs=1 -> add_pool_args passes pool=None -> no child
-                # process. Required: we may be inside a daemon worker.
+                # use_threads=True -> _ThreadPool uses threads instead
+                # of processes, eliminating pickling overhead. Safe
+                # here because the heavy work (NumPy, cKDTree, GEOS)
+                # releases the GIL.
                 apply_shape(**{
                     shape_kwarg: shape,
                     'expansion_rate': row.expansion_rate,
                     'target_size': row.target_size,
-                    'nprocs': worker_nprocs
+                    'nprocs': worker_nprocs,
+                    'use_threads': True
                 })
 
         # 4. Save the final state to the designated output path.
