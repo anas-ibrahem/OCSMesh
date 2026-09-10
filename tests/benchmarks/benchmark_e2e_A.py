@@ -164,6 +164,11 @@ def main():
             print(f'  {_fmt_stages(s)}')
             print(f'  {meter.format()}')
 
+        # Force cleanup of HfunCollector temp dirs before next mode
+        gc.collect()
+        if size > 1:
+            comm.Barrier()
+
         # --- mpi_no_pool ---
         if args.mode in ('mpi_no_pool', 'all') and size > 1:
             if rank == 0:
@@ -175,6 +180,11 @@ def main():
                                           'meter': meter}
                 print(f'  {_fmt_stages(s)}')
                 print(f'  {meter.format()}')
+
+        # Force cleanup of HfunCollector temp dirs before next mode
+        gc.collect()
+        if size > 1:
+            comm.Barrier()
 
         # --- mpi_hybrid ---
         if args.mode in ('mpi_hybrid', 'all') and size > 1:
