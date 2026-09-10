@@ -2,7 +2,7 @@ from collections import defaultdict
 from itertools import permutations
 from typing import Union, Dict, Sequence, Tuple, List
 from functools import reduce
-from multiprocessing import cpu_count, Pool
+from multiprocessing import cpu_count, Pool, current_process
 from copy import deepcopy
 import logging
 import warnings
@@ -1555,7 +1555,7 @@ def add_pool_args(func):
         nprocs = -1 if nprocs is None else nprocs
         nprocs = cpu_count() if nprocs == -1 else nprocs
 
-        if nprocs <= 1:
+        if nprocs <= 1 or current_process().daemon:
             # Sequential: no child process, so this is safe inside a worker.
             return func(*args, **kwargs, pool=None)
 
