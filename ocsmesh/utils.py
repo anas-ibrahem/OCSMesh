@@ -2,7 +2,8 @@ from collections import defaultdict
 from itertools import permutations
 from typing import Union, Dict, Sequence, Tuple, List
 from functools import reduce
-from multiprocessing import cpu_count, Pool
+from concurrent.futures import ThreadPoolExecutor
+from multiprocessing import cpu_count, Pool, current_process
 from copy import deepcopy
 import logging
 import warnings
@@ -1523,17 +1524,86 @@ def merge_meshdata(
     return composite_mesh
 
 
+def run_starmap(pool, func, iterable):
+    """Run `func(*args)` for each item, using `pool` when one exists."""
+
+    if pool is None:
+        return [func(*args) for args in iterable]
+    return pool.starmap(func, iterable)
+
+
+class _ThreadPool:
+    """Drop-in replacement for multiprocessing.Pool using threads.
+
+    Provides ``starmap`` and ``_processes`` so that existing code
+    (``run_starmap``, ``add_feature``) works without modification.
+
+    Because threads share the same address space, Shapely geometries
+    and NumPy arrays are passed by reference — **zero pickling**.
+    This is safe when the parallelised functions spend most of their
+    time in C extensions (NumPy, SciPy, GEOS/Shapely 2.x) that
+    release the GIL.
+    """
+
+    def __init__(self, processes: int):
+        self._processes = processes
+        self._executor = ThreadPoolExecutor(max_workers=processes)
+
+    def starmap(self, func, iterable):
+        """Emulate Pool.starmap using ThreadPoolExecutor."""
+        items = list(iterable)
+        futures = [self._executor.submit(func, *args) for args in items]
+        return [f.result() for f in futures]
+
+    # Context-manager support so ``with _ThreadPool(...) as p:`` works.
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self._executor.shutdown(wait=True)
+
+    def join(self):
+        """No-op — ThreadPoolExecutor.shutdown already joins."""
+
+
 def add_pool_args(func):
-    def wrapper(*args, nprocs=None, pool=None, **kwargs):
+    """Give a function `nprocs=`/`pool=` kwargs and hand it a `pool`.
+
+    Four ways to call the wrapped function:
+
+    - `pool=<Pool>`      -> reuse that pool (no new processes are started)
+    - `nprocs=N`         -> create a pool of N processes just for this call
+    - `nprocs=1`         -> no pool at all, `pool=None` is passed instead
+    - `use_threads=True` -> use a thread pool instead of a process pool,
+                            eliminating pickling overhead (safe when the
+                            work is in GIL-releasing C extensions)
+
+    That last case matters: a `multiprocessing.Pool` worker is a daemon
+    process, and a daemon process is not allowed to start child processes.
+    So code running inside a worker must ask for `nprocs=1` and get `None`
+    back, otherwise Python raises
+    "daemonic processes are not allowed to have children".
+    """
+
+    def wrapper(*args, nprocs=None, pool=None, use_threads=False, **kwargs):
         if pool is not None:
-            rv = func(*args, **kwargs, pool=pool)
-        else:
-            # Check nprocs
-            nprocs = -1 if nprocs is None else nprocs
-            nprocs = cpu_count() if nprocs == -1 else nprocs
-            with Pool(processes=nprocs) as new_pool:
-                rv = func(*args, **kwargs, pool=new_pool)
-            new_pool.join()
+            return func(*args, **kwargs, pool=pool)
+
+        # Check nprocs
+        nprocs = -1 if nprocs is None else nprocs
+        nprocs = cpu_count() if nprocs == -1 else nprocs
+
+        if nprocs <= 1 or current_process().daemon:
+            # Sequential: no child process, so this is safe inside a worker.
+            return func(*args, **kwargs, pool=None)
+
+        if use_threads:
+            with _ThreadPool(processes=nprocs) as thread_pool:
+                return func(*args, **kwargs, pool=thread_pool)
+
+        with Pool(processes=nprocs) as new_pool:
+            rv = func(*args, **kwargs, pool=new_pool)
+        new_pool.join()
         return rv
     return wrapper
 
