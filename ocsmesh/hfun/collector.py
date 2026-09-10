@@ -1191,11 +1191,7 @@ class HfunCollector(BaseHfun):
         is_manager = MPIExecutor.is_manager()
 
         if self._method == 'exact':
-            # TODO(mpi): _apply_features could be distributed in the
-            # future (each rank applies features to a subset of hfuns).
-            # For now, rank 0 only.
-            if is_manager:
-                self._apply_features()
+            self._apply_features()
 
             with tempfile.TemporaryDirectory() as temp_dir:
                 # ── COLLECTIVE: all ranks participate here ──
@@ -1890,13 +1886,24 @@ class HfunCollector(BaseHfun):
         """
 
         if not self._applied:
+            is_manager = self.execution_mode != 'mpi' or MPIExecutor.is_manager()
+
+            # MPI-Aware Refinements (All ranks must execute for collective dispatch)
             self._apply_contours()
-            self._apply_flow_limiters()
-            self._apply_const_val()
-            self._apply_linefeatures()
-            self._apply_patch()
+
+            # Non MPI-Aware Refinements (Only coordinator executes to prevent file corruption)
+            if is_manager:
+                self._apply_flow_limiters()
+                self._apply_const_val()
+                self._apply_linefeatures()
+                self._apply_patch()
+
+            # MPI-Aware Refinements (All ranks must execute for collective dispatch)
             self._apply_channels()
-            self._apply_constraints()
+
+            # Non MPI-Aware Refinements (Only coordinator executes to prevent file corruption)
+            if is_manager:
+                self._apply_constraints()
 
         self._applied = True
 
