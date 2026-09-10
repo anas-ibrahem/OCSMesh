@@ -138,10 +138,13 @@ def _configure_mpi_environment():
         # force=True raises RuntimeError — in that case we cannot change it
         # and simply warn. But at import time this should never be the case.
         try:
-            mp.set_start_method('forkserver', force=True)
-            # Without this the forkserver process imports only __main__, so
-            # every Pool worker pays the full `import ocsmesh` cost.
-            mp.set_forkserver_preload(['ocsmesh'])
+            if 'forkserver' in mp.get_all_start_methods():
+                mp.set_start_method('forkserver', force=True)
+                # Without this the forkserver process imports only __main__, so
+                # every Pool worker pays the full `import ocsmesh` cost.
+                mp.set_forkserver_preload(['ocsmesh'])
+            elif 'spawn' in mp.get_all_start_methods():
+                mp.set_start_method('spawn', force=True)
         except RuntimeError:
             current = mp.get_start_method(allow_none=True)
             if current != 'forkserver':
