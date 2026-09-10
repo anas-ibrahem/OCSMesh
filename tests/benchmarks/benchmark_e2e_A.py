@@ -82,12 +82,12 @@ def build_and_run(tile_paths, nprocs, execution_mode):
 
     stages = {}
     start = time.perf_counter()
-    msh = hfun.msh_t
+    msh = hfun.msh_t()
     stages['msh_t'] = time.perf_counter() - start
     stages['total'] = stages['msh_t']
 
     if msh is not None:
-        values = [np.array(msh.value, copy=True)]
+        values = [np.array(msh.values, copy=True)]
     else:
         values = []
     del hfun
