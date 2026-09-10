@@ -31,16 +31,20 @@ echo "========================================="
 
 # ---------------------------------------------------------
 # VARIANT 1: 15 Tiles (Size 1500x1500)
-# 16 ranks = 1 coordinator + 15 workers
+# 16 ranks = 1 coordinator + 15 workers (1 core/rank)
+# On a 16-core node, this gives 1 core per worker rank.
+# mpi_hybrid degenerates into mpi_no_pool here (no room
+# for thread pools), but it tests full e2e correctness
+# with many tiles and verifies no deadlocks.
 # ---------------------------------------------------------
 SIZE_15=1500
 TILES_15=15
 RANKS_15=16
 
 for cfg in A B; do
-    echo "========================================="
-    echo "Running Config $cfg (15 tiles, size 1500)"
-    echo "========================================="
+    echo "================================================================"
+    echo " Config $cfg — 15 tiles (1500x1500), 16 ranks (1 core/rank)"
+    echo "================================================================"
     PYTHONWARNINGS=ignore mpiexec -n $RANKS_15 python tests/benchmarks/benchmark_e2e_${cfg}.py \
         --mode all --tiles $TILES_15 --size $SIZE_15 \
         --json results_e2e_${cfg}_15tiles_${TIMESTAMP}.json
@@ -48,16 +52,19 @@ done
 
 # ---------------------------------------------------------
 # VARIANT 2: 4 Heavy Tiles (Size 3000x3000)
-# 5 ranks = 1 coordinator + 4 workers
+# 5 ranks = 1 coordinator + 4 workers (4 cores/rank)
+# This is the true hybrid config: each worker gets 4 cores
+# for its thread pool, showing the real speedup from
+# intra-tile parallelism.
 # ---------------------------------------------------------
 SIZE_HEAVY=3000
 TILES_HEAVY=4
 RANKS_HEAVY=5
 
 for cfg in A B; do
-    echo "========================================="
-    echo "Running Config $cfg (4 heavy tiles, size 3000)"
-    echo "========================================="
+    echo "================================================================"
+    echo " Config $cfg — 4 heavy tiles (3000x3000), 5 ranks (4 cores/rank)"
+    echo "================================================================"
     PYTHONWARNINGS=ignore mpiexec -n $RANKS_HEAVY python tests/benchmarks/benchmark_e2e_${cfg}.py \
         --mode all --tiles $TILES_HEAVY --size $SIZE_HEAVY \
         --json results_e2e_${cfg}_heavy_${TIMESTAMP}.json
