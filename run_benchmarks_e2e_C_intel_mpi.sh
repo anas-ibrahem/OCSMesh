@@ -13,10 +13,6 @@
 
 set -euo pipefail
 
-# Activate the conda environment
-source ~/miniconda3/etc/profile.d/conda.sh
-conda activate ocsmesh-dev
-
 # Generate timestamp for logging
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 LOG_FILE="log_e2e_C_${TIMESTAMP}.txt"
