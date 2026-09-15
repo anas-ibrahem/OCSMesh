@@ -2575,7 +2575,7 @@ class HfunCollector(BaseHfun):
         Dispatches to either the serial or parallel implementation based on
         the current execution mode.
         """
-        if self.execution_mode in ('parallel', 'mpi') and self._nprocs > 1:
+        if self._can_distribute_refinements():
             _logger.info("Applying flow limiters using PARALLEL method.")
             self._apply_flow_limiters_parallel()
         else:
@@ -2771,7 +2771,7 @@ class HfunCollector(BaseHfun):
         Dispatches to either the serial or parallel implementation based on
         the current execution mode.
         """
-        if self.execution_mode in ('parallel', 'mpi') and self._nprocs > 1:
+        if self._can_distribute_refinements():
             _logger.info("Applying constant values using PARALLEL method.")
             self._apply_const_val_parallel()
         else:
