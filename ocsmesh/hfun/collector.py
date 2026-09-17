@@ -922,6 +922,7 @@ MPIExecutor.register_op('contours', _contours_task_worker)
 MPIExecutor.register_op('channels', _channels_task_worker)
 MPIExecutor.register_op('flow_limiter', _flow_limiter_task_worker)
 MPIExecutor.register_op('const_val', _const_val_task_worker)
+MPIExecutor.register_op('constraints', _constraints_task_worker)
 
 
 
@@ -1906,9 +1907,8 @@ class HfunCollector(BaseHfun):
             # MPI-Aware Refinements (All ranks must execute for collective dispatch)
             self._apply_channels()
 
-            # Non MPI-Aware Refinements (Only coordinator executes to prevent file corruption)
-            if is_manager:
-                self._apply_constraints()
+            # MPI-Aware Refinements (All ranks must participate for collective dispatch)
+            self._apply_constraints()
 
         self._applied = True
 
@@ -1918,9 +1918,9 @@ class HfunCollector(BaseHfun):
 
         Dispatches to either ``_apply_constraints_serial`` or
         ``_apply_constraints_parallel`` based on the current
-        ``execution_mode``.  When any ``TopoFuncConstraint`` is present
-        (which stores an unpickleable lambda), the parallel path falls
-        back to serial automatically with a logged warning.
+        ``execution_mode``.  All MPI ranks call this collectively so
+        that ``MPIExecutor.run()`` inside ``_apply_constraints_parallel``
+        can coordinate work across ranks.
 
         Returns
         -------
@@ -1937,24 +1937,9 @@ class HfunCollector(BaseHfun):
             raise NotImplementedError(
                 "This function does not support fast hfun method")
 
-        if self.execution_mode in ('parallel', 'mpi') and self._nprocs > 1:
-            # TopoFuncConstraint stores a lambda which cannot be pickled
-            # for multiprocessing.Pool — fall back to serial in that case.
-            has_func_constraint = any(
-                isinstance(c, TopoFuncConstraint)
-                for _, c in self._constraint_info_coll
-            )
-            if has_func_constraint:
-                warnings.warn(
-                    "TopoFuncConstraint contains a callable that cannot "
-                    "be pickled for parallel execution. Falling back to "
-                    "serial for _apply_constraints().",
-                    UserWarning
-                )
-                self._apply_constraints_serial()
-            else:
-                _logger.info("Applying constraints using PARALLEL method.")
-                self._apply_constraints_parallel()
+        if self._can_distribute_refinements():
+            _logger.info("Applying constraints using PARALLEL method.")
+            self._apply_constraints_parallel()
         else:
             _logger.info("Applying constraints using SERIAL method.")
             self._apply_constraints_serial()
@@ -1979,87 +1964,91 @@ class HfunCollector(BaseHfun):
 
         Uses the same 3-phase pattern as ``_apply_flow_limiters_parallel``:
 
-        1. **Preparation** — build one pickleable task dict per raster,
-           containing file paths + the list of applicable ``Constraint``
-           objects.
-        2. **Execution** — ``Pool.map()`` sends tasks to
-           ``_constraints_task_worker`` processes.
+        1. **Preparation** — coordinator (Rank 0) builds one pickleable
+           task dict per raster, containing file paths + the list of
+           applicable ``Constraint`` objects.
+        2. **Execution** — tasks go to ``MPIExecutor.run()`` in 'mpi'
+           mode, or to ``Pool.map()`` in 'parallel' mode. Worker ranks
+           return early after the collective ``MPIExecutor.run()`` call.
         3. **Integration** — replace ``self._hfun_list`` entries with new
            ``HfunRaster`` objects built from the worker output files.
 
         Notes
         -----
-        This method must **not** be called when any constraint is a
-        ``TopoFuncConstraint`` because its internal lambda is not
-        pickleable.  The dispatcher ``_apply_constraints()`` handles
-        this check.
+        ``TopoFuncConstraint`` used to store an unpickleable lambda.  This
+        has been replaced with ``_default_topo_func`` (a named module-level
+        function), and user-supplied lambdas are now rejected with a clear
+        error at construction time.  All constraint types are therefore
+        pickleable and can be distributed via MPI or Pool without a fallback.
 
         Returns
         -------
         None
         """
 
-        # Phase 1: PREPARATION
+        is_coordinator = (
+            self.execution_mode != 'mpi' or MPIExecutor.is_manager())
+
         tasks = []
-        hfuns_to_process = {}
+        if is_coordinator:
+            # Phase 1: PREPARATION (Coordinator only)
+            for in_idx, hfun in enumerate(self._hfun_list):
+                if not isinstance(hfun, HfunRaster):
+                    continue
 
-        for in_idx, hfun in enumerate(self._hfun_list):
-            if not isinstance(hfun, HfunRaster):
-                continue
+                constraint_list = self._constraint_info_coll.get_constraints(
+                    hfun, in_idx, per_hfun=True
+                )
 
-            constraint_list = self._constraint_info_coll.get_constraints(
-                hfun, in_idx, per_hfun=True
-            )
+                if not constraint_list:
+                    continue
 
-            if constraint_list:
-                hfuns_to_process[in_idx] = {
-                    'hfun': hfun,
-                    'constraints': constraint_list
-                }
+                hfun_input_path = hfun.tmpfile
+                topo_input_path = hfun._raster.path  # pylint: disable=W0212
+                output_path = os.path.join(
+                    self._work_dir, f"constraints_result_{in_idx}.tif")
 
+                tasks.append({
+                    'op': 'constraints',
+                    'original_index': in_idx,
+                    'hfun_input_path': hfun_input_path,
+                    'topo_input_path': topo_input_path,
+                    'output_path': output_path,
+                    'global_hmin': hfun._hmin,   # pylint: disable=W0212
+                    'global_hmax': hfun._hmax,   # pylint: disable=W0212
+                    'constraint_list': constraint_list
+                })
 
-        # Same style as other functions
-        # (Can be refactored to be a shared function that
-        # accept needed parameters to make code cleaner)
-        # in another PR
-        for in_idx, data in hfuns_to_process.items():
-            hfun = data['hfun']
-            hfun_input_path = hfun.tmpfile
-            topo_input_path = hfun._raster.path  # pylint: disable=W0212
+            if not tasks:
+                _logger.info("No constraint tasks to execute.")
 
-            output_path = os.path.join(
-                self._work_dir, f"constraints_result_{in_idx}.tif")
+        # Phase 2: EXECUTION (all ranks participate for MPI collective)
+        if self.execution_mode == 'mpi':
+            raw_results = MPIExecutor.run(
+                tasks, work_dir=self._work_dir, fail_fast=True)
+            if raw_results is None:
+                # MPI worker rank — coordinator owns results.
+                return
+            results = [raw_results[idx] for idx in sorted(raw_results)]
+        else:
+            if not tasks:
+                return
+            _logger.info(
+                f"Start parallel execution for {len(tasks)} constraint tasks")
+            n_workers = min(self._nprocs, len(tasks))
+            with Pool(processes=n_workers) as p:
+                results = p.map(_constraints_task_worker, tasks)
+            _logger.info("Parallel execution finished.")
 
-            task = {
-                'original_index': in_idx,
-                'hfun_input_path': hfun_input_path,
-                'topo_input_path': topo_input_path,
-                'output_path': output_path,
-                'global_hmin': hfun._hmin,   # pylint: disable=W0212
-                'global_hmax': hfun._hmax,   # pylint: disable=W0212
-                'constraint_list': data['constraints']
-            }
-            tasks.append(task)
+            failures = [r for r in results if r['status'] == 'error']
+            if failures:
+                msgs = [f"  idx {r['original_index']}: {r['error']}"
+                        for r in failures]
+                raise RuntimeError(
+                    f"{len(failures)} constraint worker(s) failed:\n"
+                    + "\n".join(msgs))
 
-        if not tasks:
-            _logger.info("No constraint tasks to execute.")
-            return
-
-        # Phase 2: EXECUTION
-        _logger.info(
-            f"Start parallel execution for {len(tasks)} constraint tasks")
-        # Cap workers at the number of tasks: spawning more workers than tasks
-        # wastes spawn time and memory with idle processes.
-        n_workers = min(self._nprocs, len(tasks))
-        with Pool(processes=n_workers) as p:
-            results = p.map(_constraints_task_worker, tasks)
-        _logger.info("Parallel execution finished.")
-
-        # Same style as other functions
-        # (Can be refactored to be a shared function that
-        # accept needed parameters to make code cleaner)
-        # in another PR
-        # Phase 3: INTEGRATION
+        # Phase 3: INTEGRATION (coordinator only)
         new_hfun_objects = {}
         for result in results:
             if result['status'] == 'error':
@@ -2576,7 +2565,7 @@ class HfunCollector(BaseHfun):
         Dispatches to either the serial or parallel implementation based on
         the current execution mode.
         """
-        if self.execution_mode in ('parallel', 'mpi') and self._nprocs > 1:
+        if self._can_distribute_refinements():
             _logger.info("Applying flow limiters using PARALLEL method.")
             self._apply_flow_limiters_parallel()
         else:
@@ -2772,7 +2761,7 @@ class HfunCollector(BaseHfun):
         Dispatches to either the serial or parallel implementation based on
         the current execution mode.
         """
-        if self.execution_mode in ('parallel', 'mpi') and self._nprocs > 1:
+        if self._can_distribute_refinements():
             _logger.info("Applying constant values using PARALLEL method.")
             self._apply_const_val_parallel()
         else:
