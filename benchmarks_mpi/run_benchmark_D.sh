@@ -84,7 +84,7 @@ echo "--- [V1] serial_mp ---"
 PYTHONWARNINGS=ignore python "${BENCH}" \
     --mode serial_mp --tiles $TILES_15 --size $SIZE_15 \
     --json "${SCRIPT_DIR}/results_D_15t_serial_${TIMESTAMP}.json"
-echo "  [sleep 120s to flush memory and page cache]"
+echo "  [sleep 120s cooldown]"
 sync; sleep 120
 
 echo ""
@@ -92,7 +92,7 @@ echo "--- [V1] mpi_no_pool (${RANKS_15} ranks, 1 core/rank) ---"
 PYTHONWARNINGS=ignore mpiexec -n $RANKS_15 python "${BENCH}" \
     --mode mpi_no_pool --tiles $TILES_15 --size $SIZE_15 \
     --json "${SCRIPT_DIR}/results_D_15t_npool_${TIMESTAMP}.json"
-echo "  [sleep 120s to flush memory and page cache]"
+echo "  [sleep 120s cooldown]"
 sync; sleep 120
 
 echo ""
@@ -100,7 +100,7 @@ echo "--- [V1] mpi_hybrid (${RANKS_15} ranks, 1 core/rank — degenerates to no_
 PYTHONWARNINGS=ignore mpiexec -n $RANKS_15 python "${BENCH}" \
     --mode mpi_hybrid --tiles $TILES_15 --size $SIZE_15 \
     --json "${SCRIPT_DIR}/results_D_15t_hybrid_${TIMESTAMP}.json"
-echo "  [sleep 120s to flush memory and page cache]"
+echo "  [sleep 120s cooldown]"
 sync; sleep 120
 
 
@@ -124,7 +124,7 @@ echo "--- [V2] serial_mp ---"
 PYTHONWARNINGS=ignore python "${BENCH}" \
     --mode serial_mp --tiles $TILES_HEAVY --size $SIZE_HEAVY \
     --json "${SCRIPT_DIR}/results_D_4t_serial_${TIMESTAMP}.json"
-echo "  [sleep 120s to flush memory and page cache]"
+echo "  [sleep 120s cooldown]"
 sync; sleep 120
 
 echo ""
@@ -132,7 +132,7 @@ echo "--- [V2] mpi_no_pool (${RANKS_HEAVY} ranks, 1 core/rank) ---"
 PYTHONWARNINGS=ignore mpiexec -n $RANKS_HEAVY python "${BENCH}" \
     --mode mpi_no_pool --tiles $TILES_HEAVY --size $SIZE_HEAVY \
     --json "${SCRIPT_DIR}/results_D_4t_npool_${TIMESTAMP}.json"
-echo "  [sleep 120s to flush memory and page cache]"
+echo "  [sleep 120s cooldown]"
 sync; sleep 120
 
 echo ""
@@ -140,7 +140,7 @@ echo "--- [V2] mpi_hybrid (${RANKS_HEAVY} ranks, auto cores/rank) ---"
 PYTHONWARNINGS=ignore mpiexec -n $RANKS_HEAVY python "${BENCH}" \
     --mode mpi_hybrid --tiles $TILES_HEAVY --size $SIZE_HEAVY \
     --json "${SCRIPT_DIR}/results_D_4t_hybrid_${TIMESTAMP}.json"
-echo "  [sleep 120s to flush memory and page cache]"
+echo "  [sleep 120s cooldown]"
 sync; sleep 120
 
 
