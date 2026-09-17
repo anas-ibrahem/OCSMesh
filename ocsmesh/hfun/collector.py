@@ -63,6 +63,7 @@ from ocsmesh.features.constraint import (
     TopoFuncConstraint,
     CourantNumConstraint,
     RegionConstraint,
+    _default_topo_func,
 )
 
 CanCreateSingleHfun = Union[Raster, EuclideanMesh2D]
@@ -724,6 +725,80 @@ def _constraints_task_worker(task: dict):
     }
 
 
+
+def _user_shapes_task_worker(task: dict):
+    """Apply user-provided shape refinements to a single HfunRaster.
+
+    Handles both patch (MultiPolygon → add_patch) and line-feature
+    (MultiLineString → add_feature) refinements. The coordinator resolves
+    each definition to a ``(shape, CRS, size_info)`` triple and places it
+    directly in the task dict — Shapely geometries are natively pickleable
+    and all ranks share the same Python/MPI environment.
+
+    Registered under two op keys (``'patch'`` and ``'linefeature'``). The
+    correct method and kwarg are selected via ``task['method_name']`` and
+    ``task['shape_kwarg']``, so no per-kind wrapper is needed.
+
+    ``size_info`` keys are always exactly ``{'expansion_rate', 'target_size'}``,
+    verified at the call sites in :meth:`HfunCollector._resolve_and_build_shape_tasks`.
+    They do not overlap with the fixed kwargs ``nprocs`` and ``use_threads``.
+    """
+
+    original_index  = task['original_index']
+    hfun_input_path = task['hfun_input_path']
+    topo_input_path = task['topo_input_path']
+    output_path     = task['output_path']
+    global_hmin     = task['global_hmin']
+    global_hmax     = task['global_hmax']
+    shapes          = task['shapes']       # list[(geometry, CRS, size_info dict)]
+    method_name     = task['method_name']  # 'add_patch' | 'add_feature'
+    shape_kwarg     = task['shape_kwarg']  # 'multipolygon' | 'feature'
+    worker_nprocs   = task.get('worker_nprocs', 1)
+
+    try:
+        topo_raster = Raster(topo_input_path)
+        worker_hfun = HfunRaster(
+            raster=topo_raster,
+            hmin=global_hmin,
+            hmax=global_hmax,
+            verbosity=0,
+            initial_value=hfun_input_path)
+
+        apply_shape = getattr(worker_hfun, method_name)
+
+        for shape, shape_crs, size_info in shapes:
+            if not shape_crs.equals(worker_hfun.crs):
+                transformer = Transformer.from_crs(
+                    shape_crs, worker_hfun.crs, always_xy=True)
+                shape = ops.transform(transformer.transform, shape)
+            # use_threads=True: routes add_feature (called internally by
+            # add_patch when expansion_rate is set) through _ThreadPool.
+            # _ThreadPool uses threads — not child processes — so this is
+            # legal inside a daemon worker.  The @add_pool_args decorator
+            # (utils.py) has an explicit current_process().daemon guard
+            # that would fall back to sequential; use_threads bypasses
+            # that path entirely and is always safe here.
+            apply_shape(**{
+                shape_kwarg: shape,
+                'nprocs': worker_nprocs,
+                'use_threads': True,
+                **size_info,  # only 'expansion_rate', 'target_size'
+            })
+
+        worker_hfun.save(output_path)
+        return {
+            'status': 'success',
+            'original_index': original_index,
+            'output_path': output_path,
+        }
+    except Exception:  # pylint: disable=broad-exception-caught
+        return {
+            'status': 'error',
+            'original_index': original_index,
+            'error': traceback.format_exc(),
+        }
+
+
 def _replay_shapes_task_worker(task: dict, method_name: str, shape_kwarg: str):
     """
     A self-contained worker for applying one refinement kind to a single
@@ -923,6 +998,8 @@ MPIExecutor.register_op('channels', _channels_task_worker)
 MPIExecutor.register_op('flow_limiter', _flow_limiter_task_worker)
 MPIExecutor.register_op('const_val', _const_val_task_worker)
 MPIExecutor.register_op('constraints', _constraints_task_worker)
+MPIExecutor.register_op('patch', _user_shapes_task_worker)
+MPIExecutor.register_op('linefeature', _user_shapes_task_worker)
 
 
 
@@ -1324,7 +1401,7 @@ class HfunCollector(BaseHfun):
     def add_topo_func_constraint(
             self,
             func: Callable[[npt.NDArray[np.float32]], npt.NDArray[np.float32]]
-                = lambda i: i / 2.0,
+                = _default_topo_func,
             upper_bound: float = np.inf,
             lower_bound: float = -np.inf,
             value_type: Literal['min', 'max'] = 'min',
@@ -1792,7 +1869,7 @@ class HfunCollector(BaseHfun):
             shapefile: Union[None, str, Path] = None,
             expansion_rate: float = 0.01,
             target_size: Optional[float] = None,
-            crs: CRS = 4326
+            crs: Union[CRS, str, int] = 4326
             ) -> None:
         """Add refinement as a region of fixed size with an optional rate
 
@@ -1832,7 +1909,8 @@ class HfunCollector(BaseHfun):
 
         if not line_defn:
             if shape:
-                line_defn = LineFeature(shape=shape, shape_crs=crs)
+                line_defn = LineFeature(
+                    shape=shape, shape_crs=CRS.from_user_input(crs))
 
             elif shapefile:
                 line_defn = LineFeature(shapefile=shapefile)
@@ -1890,8 +1968,6 @@ class HfunCollector(BaseHfun):
         """
 
         if not self._applied:
-            is_manager = self.execution_mode != 'mpi' or MPIExecutor.is_manager()
-
             # MPI-Aware Refinements (All ranks must execute for collective dispatch)
             self._apply_contours()
 
@@ -1899,10 +1975,9 @@ class HfunCollector(BaseHfun):
             self._apply_flow_limiters()
             self._apply_const_val()
 
-            # Non MPI-Aware Refinements (Only coordinator executes to prevent file corruption)
-            if is_manager:
-                self._apply_linefeatures()
-                self._apply_patch()
+            # MPI-Aware Refinements (All ranks must participate for collective dispatch)
+            self._apply_linefeatures()
+            self._apply_patch()
 
             # MPI-Aware Refinements (All ranks must execute for collective dispatch)
             self._apply_channels()
@@ -2221,6 +2296,51 @@ class HfunCollector(BaseHfun):
 
         return raster_hfun_list, parallel_targets, serial_targets
 
+    def _resolve_and_build_shape_tasks(
+            self, apply_to, defn_coll, resolver_method,
+            op_name, method_name, shape_kwarg):
+        """Coordinator-only: resolve shape definitions and build MPI task dicts.
+
+        Returns (tasks, resolved_shapes, parallel_targets, serial_targets).
+
+        ``resolved_shapes`` is assigned once and referenced in every task dict.
+        mpi4py will re-pickle it per task (each task dict is independent), so
+        large or numerous geometries could add serialization overhead. If
+        Config F benchmarks show lower-than-expected hybrid utilization, replace
+        with a ``comm.bcast(resolved_shapes, root=0)`` broadcast and lightweight
+        index references in each task dict.
+        """
+        # raster_hfun_list (first element) is only needed by contours/channels
+        # for the coll.calculate() raster-extraction step. User-provided shapes
+        # (patch, linefeature) have no extraction step — discarding it is correct.
+        _, parallel_targets, serial_targets = \
+            self._split_refinement_targets(apply_to)
+
+        resolved_shapes = []
+        for defn, size_info in defn_coll:
+            shape, shape_crs = getattr(defn, resolver_method)()
+            resolved_shapes.append((shape, shape_crs, size_info))
+
+        tasks = [
+            {
+                'op':              op_name,
+                'original_index':  idx,
+                'hfun_input_path': hfun.tmpfile,
+                'topo_input_path': hfun._raster.path,
+                'output_path':     os.path.join(
+                    self._work_dir, f'{op_name}_result_{idx}.tif'),
+                'global_hmin':     hfun._hmin,
+                'global_hmax':     hfun._hmax,
+                'shapes':          resolved_shapes,   # same list object, not a copy
+                'method_name':     method_name,
+                'shape_kwarg':     shape_kwarg,
+                'worker_nprocs':   -1 if self.execution_mode == 'mpi' else 1,
+            }
+            for idx, hfun in parallel_targets.items()
+        ]
+
+        return tasks, resolved_shapes, parallel_targets, serial_targets
+
     def _dispatch_refinement_tasks(self, kind, tasks):
         """Run prepared refinement tasks via MPI ranks or a local Pool.
 
@@ -2244,8 +2364,11 @@ class HfunCollector(BaseHfun):
         # Cap workers at the number of tasks: spawning more workers
         # than tasks wastes spawn time and memory with idle processes.
         n_workers = min(self._nprocs, len(tasks))
-        worker = (_contours_task_worker if kind == 'contours'
-                  else _channels_task_worker)
+        worker = MPIExecutor.get_op(kind)
+        if worker is None:
+            raise ValueError(
+                f"No worker registered for op {kind!r}. "
+                f"Call MPIExecutor.register_op({kind!r}, fn) at module load time.")
         with Pool(processes=n_workers) as p:
             results = p.map(worker, tasks)
         _logger.info("Parallel execution finished.")
@@ -2929,6 +3052,14 @@ class HfunCollector(BaseHfun):
 
 
     def _apply_patch(self, apply_to: Optional[SizeFuncList] = None) -> None:
+        if self._can_distribute_refinements():
+            _logger.info("Applying patches using PARALLEL method.")
+            self._apply_patch_parallel(apply_to)
+        else:
+            _logger.info("Applying patches using SERIAL method.")
+            self._apply_patch_serial(apply_to)
+
+    def _apply_patch_serial(self, apply_to: Optional[SizeFuncList] = None) -> None:
         """Internal: apply the specified patch refinements.
 
         Parameters
@@ -2964,8 +3095,51 @@ class HfunCollector(BaseHfun):
                     hfun.add_patch(
                             shape, pool=p, **size_info)
 
+    def _apply_patch_parallel(self, apply_to=None):
+        is_coordinator = (
+            self.execution_mode != 'mpi' or MPIExecutor.is_manager())
 
-    def _apply_linefeatures(self, apply_to: Optional[SizeFuncList] = None) -> None:
+        tasks = resolved_shapes = serial_targets = None
+        if is_coordinator:
+            tasks, resolved_shapes, _, serial_targets = \
+                self._resolve_and_build_shape_tasks(
+                    apply_to,
+                    self._refine_patch_info_coll,
+                    'get_multipolygon',
+                    'patch', 'add_patch', 'multipolygon')
+
+        # All ranks reach _dispatch_refinement_tasks() collectively in MPI
+        # mode — even with zero tasks — so every worker enters its recv loop
+        # and can receive TAG_STOP. The non-MPI Pool path does not have this
+        # requirement (no collective synchronisation needed) and the shared
+        # helper handles its own early-return on empty tasks.
+        results = self._dispatch_refinement_tasks('patch', tasks or [])
+        if results is None:
+            return  # MPI worker rank
+
+        self._integrate_refinement_results('patch', results)
+
+        # HfunMesh / base-mesh targets cannot be rebuilt from a file in a
+        # worker, so they always stay on the coordinator.
+        if is_coordinator and serial_targets:
+            with Pool(processes=self._nprocs) as p:
+                for hfun in serial_targets:
+                    for shape, shape_crs, size_info in resolved_shapes:
+                        if not shape_crs.equals(hfun.crs):
+                            transformer = Transformer.from_crs(
+                                shape_crs, hfun.crs, always_xy=True)
+                            shape = ops.transform(transformer.transform, shape)
+                        hfun.add_patch(shape, pool=p, **size_info)
+
+    def _apply_linefeatures(self, apply_to=None):
+        if self._can_distribute_refinements():
+            _logger.info("Applying line features using PARALLEL method.")
+            self._apply_linefeatures_parallel(apply_to)
+        else:
+            _logger.info("Applying line features using SERIAL method.")
+            self._apply_linefeatures_serial(apply_to)
+
+    def _apply_linefeatures_serial(self, apply_to: Optional[SizeFuncList] = None) -> None:
         """Internal: apply the specified line feature refinements.
 
         Parameters
@@ -3004,6 +3178,42 @@ class HfunCollector(BaseHfun):
                         pool=p,
                         **size_info
                     )
+
+    def _apply_linefeatures_parallel(self, apply_to=None):
+        is_coordinator = (
+            self.execution_mode != 'mpi' or MPIExecutor.is_manager())
+
+        tasks = resolved_shapes = serial_targets = None
+        if is_coordinator:
+            tasks, resolved_shapes, _, serial_targets = \
+                self._resolve_and_build_shape_tasks(
+                    apply_to,
+                    self._refine_line_info_coll,   # line collector, not patch
+                    'get_multiline',               # resolver method for LineFeature
+                    'linefeature',                 # op key registered in MPIExecutor
+                    'add_feature',                 # HfunRaster method name
+                    'feature')                     # kwarg name for that method
+
+        # All ranks reach _dispatch_refinement_tasks() collectively in MPI
+        # mode — even with zero tasks — so every worker enters its recv loop
+        # and can receive TAG_STOP.
+        results = self._dispatch_refinement_tasks('linefeature', tasks or [])
+        if results is None:
+            return  # MPI worker rank
+
+        self._integrate_refinement_results('linefeature', results)
+
+        # HfunMesh / base-mesh targets cannot be rebuilt from a file in a
+        # worker, so they always stay on the coordinator.
+        if is_coordinator and serial_targets:
+            with Pool(processes=self._nprocs) as p:
+                for hfun in serial_targets:
+                    for shape, shape_crs, size_info in resolved_shapes:
+                        if not shape_crs.equals(hfun.crs):
+                            transformer = Transformer.from_crs(
+                                shape_crs, hfun.crs, always_xy=True)
+                            shape = ops.transform(transformer.transform, shape)
+                        hfun.add_feature(feature=shape, pool=p, **size_info)
 
 
     def _calculate_and_write_hfun_to_disk(
