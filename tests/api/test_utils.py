@@ -1226,7 +1226,7 @@ class TestEffectiveCpuCount(unittest.TestCase):
         out of a 64-core machine.  The result must be 2, not 64.
         """
 
-        with patch('os.sched_getaffinity', return_value={0, 1}) as mock_aff:
+        with patch('os.sched_getaffinity', return_value={0, 1}, create=True) as mock_aff:
             result = effective_cpu_count()
         mock_aff.assert_called_once_with(0)
         self.assertEqual(result, 2)
@@ -1237,7 +1237,7 @@ class TestEffectiveCpuCount(unittest.TestCase):
         Simulates macOS/Windows where sched_getaffinity raises AttributeError.
         """
 
-        with patch('os.sched_getaffinity', side_effect=AttributeError):
+        with patch('os.sched_getaffinity', side_effect=AttributeError, create=True):
             with patch('os.cpu_count', return_value=8):
                 result = effective_cpu_count()
         self.assertEqual(result, 8)
@@ -1257,7 +1257,7 @@ class TestEffectiveCpuCount(unittest.TestCase):
             received_pool.append(pool)
 
         # Simulate a SLURM run where this rank is pinned to 1 core.
-        with patch('os.sched_getaffinity', return_value={3}):
+        with patch('os.sched_getaffinity', return_value={3}, create=True):
             dummy(use_threads=True)  # would create a 1-thread pool...
         # ...but nprocs <= 1 must short-circuit to sequential (pool=None).
         self.assertIsNone(received_pool[-1])
@@ -1280,7 +1280,7 @@ class TestEffectiveCpuCount(unittest.TestCase):
         # Worker is pinned to 2 cores; simulate receiving nprocs=-1 from a task
         # dict (what HfunCollector now sends in MPI mode instead of a baked-in
         # coordinator core count).
-        with patch('os.sched_getaffinity', return_value={0, 1}), \
+        with patch('os.sched_getaffinity', return_value={0, 1}, create=True), \
              patch('ocsmesh.utils._ThreadPool') as mock_pool_cls:
 
             mock_pool_cls.return_value.__enter__.return_value = MagicMock()
