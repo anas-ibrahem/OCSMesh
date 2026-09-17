@@ -8,10 +8,13 @@ from multiprocessing.pool import Pool
 from pathlib import Path
 import numpy as np
 import numpy.testing as npt
+import rasterio as rio
+from rasterio.transform import from_origin
 from shapely import geometry
 from unittest.mock import patch, MagicMock
 
 from ocsmesh import Hfun, Mesh, Raster
+from ocsmesh.features.constraint import _default_topo_func
 from ocsmesh.hfun.raster import HfunRaster
 from ocsmesh.utils import raster_from_numpy
 
@@ -232,29 +235,36 @@ class TestHfunCollectorExecution(unittest.TestCase):
 
 
     @unittest.skipIf(IS_WINDOWS, 'Pickle tests not guaranteed stable on Windows due to I/O issues')
-    def test_parallel_falls_back_for_func_constraint(self):
+    def test_parallel_executes_func_constraint(self):
         """
-        Verify that when a TopoFuncConstraint (which stores a lambda)
-        is present, parallel mode gracefully falls back to serial
-        without raising a pickling error.
+        Verify that when a TopoFuncConstraint (with a named function)
+        is present, parallel mode executes successfully.
         """
         hfun = Hfun(self.raster_list, nprocs=2, hmin=10, hmax=1000)
         hfun.execution_mode = 'parallel'
 
-        # TopoFuncConstraint uses a lambda — not pickleable by default.
-        # The dispatcher should detect this and fall back to serial.
         hfun.add_topo_func_constraint(
-            func=lambda i: abs(i) / 2.0,
+            func=_default_topo_func,
             upper_bound=-10,
             value_type='min',
         )
 
-        # Should NOT raise PicklingError — falls back to serial and emits a warning
-        with self.assertWarns(UserWarning):
-            meshdata = hfun.meshdata()
+        meshdata = hfun.meshdata()
         
         self.assertIsNotNone(meshdata)
         self.assertTrue(len(meshdata.values) > 0)
+
+    def test_topo_func_constraint_rejects_lambda(self):
+        """
+        Verify that TopoFuncConstraint rejects lambdas.
+        """
+        hfun = Hfun(self.raster_list, nprocs=2, hmin=10, hmax=1000)
+        with self.assertRaises(ValueError):
+            hfun.add_topo_func_constraint(
+                func=lambda i: abs(i) / 2.0,
+                upper_bound=-10,
+                value_type='min',
+            )
 
 
     def test_mixed_raster_mesh_constraint_filtering(self):
