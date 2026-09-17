@@ -21,6 +21,8 @@ import traceback
 from pathlib import Path
 from time import time
 from multiprocessing import Pool
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
 from copy import copy, deepcopy
 from typing import (
     Union, Sequence, List, Tuple, Iterable, Any, Optional, Callable)
@@ -165,6 +167,13 @@ class _RefinementContourCollector:
             ) -> None:
         """Extract specified contours and store on disk in `out_path`.
 
+        Each contour level definition is extracted concurrently in its
+        own thread (one thread per level).  The heavy work inside
+        ``iter_contours`` — rasterio reads and marching-squares via
+        NumPy/scikit-image — releases the GIL, so threads give real
+        wall-time speedup.  Each thread only reads from its own source
+        objects (no sharing of rasterio handles between threads).
+
         Parameters
         ----------
         source_list : list of HfunRaster
@@ -180,9 +189,12 @@ class _RefinementContourCollector:
 
         out_dir = Path(out_path)
         out_dir.mkdir(exist_ok=True, parents=True)
-        file_counter = 0
         pid = os.getpid()
         self._container.clear()
+
+        # Resolve sources once (before threading) to avoid mutating shared
+        # contour_defn objects from multiple threads simultaneously.
+        resolved_jobs = []
         for contour_defn, size_info in self._contours_info:
             if not contour_defn.has_source:
                 # Copy so that in case of a 2nd run the no-source
@@ -190,21 +202,42 @@ class _RefinementContourCollector:
                 contour_defn = copy(contour_defn)
                 for source in source_list:
                     contour_defn.add_source(source)
+            resolved_jobs.append((contour_defn, size_info))
 
+        # Atomic counter for unique file names across threads.
+        _lock = threading.Lock()
+        _counter = [0]
+
+        def _extract_one_level(contour_defn, size_info):
+            """Extract all tiles for one contour level; called in a thread."""
+            local_results = []
             for contour, crs in contour_defn.iter_contours():
-                file_counter = file_counter + 1
-                feather_path = out_dir / f"contour_{pid}_{file_counter}.feather"
-                crs_path = out_dir / f"crs_{pid}_{file_counter}.json"
+                with _lock:
+                    _counter[0] += 1
+                    fc = _counter[0]
+                feather_path = out_dir / f"contour_{pid}_{fc}.feather"
+                crs_path = out_dir / f"crs_{pid}_{fc}.json"
                 gpd.GeoDataFrame(
-                    { 'geometry': [contour],
-                      'expansion_rate': size_info['expansion_rate'],
-                      'target_size': size_info['target_size'],
-                    },
+                    {'geometry': [contour],
+                     'expansion_rate': size_info['expansion_rate'],
+                     'target_size': size_info['target_size']},
                     crs=crs).to_feather(feather_path)
                 gc.collect()
                 with open(crs_path, 'w') as fp:
                     fp.write(crs.to_json())
-                self._container.append((feather_path, crs_path))
+                local_results.append((feather_path, crs_path))
+            return local_results
+
+        n_workers = max(1, min(len(resolved_jobs), os.cpu_count() or 1))
+        with ThreadPoolExecutor(max_workers=n_workers) as executor:
+            # Submit one future per level definition; preserve submission order
+            # so _container order is deterministic.
+            futures = [
+                executor.submit(_extract_one_level, cd, si)
+                for cd, si in resolved_jobs
+            ]
+            for fut in futures:
+                self._container.extend(fut.result())
 
 
     @property
@@ -459,6 +492,12 @@ class _ChannelRefineCollector:
             ) -> None:
         """Extract specified channels and store on disk in `out_path`.
 
+        Each channel definition (width) is extracted concurrently in its
+        own thread (one thread per channel definition).  The heavy work
+        inside ``iter_channels`` — rasterio reads and polygon extraction
+        via NumPy/GEOS — releases the GIL, so threads give real wall-time
+        speedup.  Each thread only reads from its own source objects.
+
         Parameters
         ----------
         source_list : list of HfunRaster
@@ -474,9 +513,11 @@ class _ChannelRefineCollector:
 
         out_dir = Path(out_path)
         out_dir.mkdir(exist_ok=True, parents=True)
-        file_counter = 0
         pid = os.getpid()
         self._container.clear()
+
+        # Resolve sources once before threading.
+        resolved_jobs = []
         for channel_defn, size_info in self._channels_info:
             if not channel_defn.has_source:
                 # Copy so that in case of a 2nd run the no-source
@@ -484,21 +525,40 @@ class _ChannelRefineCollector:
                 channel_defn = copy(channel_defn)
                 for source in source_list:
                     channel_defn.add_source(source)
+            resolved_jobs.append((channel_defn, size_info))
 
+        # Atomic counter for unique file names across threads.
+        _lock = threading.Lock()
+        _counter = [0]
+
+        def _extract_one_channel(channel_defn, size_info):
+            """Extract all tiles for one channel definition; called in a thread."""
+            local_results = []
             for channels, crs in channel_defn.iter_channels():
-                file_counter = file_counter + 1
-                feather_path = out_dir / f"channels_{pid}_{file_counter}.feather"
-                crs_path = out_dir / f"crs_{pid}_{file_counter}.json"
+                with _lock:
+                    _counter[0] += 1
+                    fc = _counter[0]
+                feather_path = out_dir / f"channels_{pid}_{fc}.feather"
+                crs_path = out_dir / f"crs_{pid}_{fc}.json"
                 gpd.GeoDataFrame(
-                    { 'geometry': [channels],
-                      'expansion_rate': size_info['expansion_rate'],
-                      'target_size': size_info['target_size'],
-                    },
+                    {'geometry': [channels],
+                     'expansion_rate': size_info['expansion_rate'],
+                     'target_size': size_info['target_size']},
                     crs=crs).to_feather(feather_path)
                 gc.collect()
                 with open(crs_path, 'w') as fp:
                     fp.write(crs.to_json())
-                self._container.append((feather_path, crs_path))
+                local_results.append((feather_path, crs_path))
+            return local_results
+
+        n_workers = max(1, min(len(resolved_jobs), os.cpu_count() or 1))
+        with ThreadPoolExecutor(max_workers=n_workers) as executor:
+            futures = [
+                executor.submit(_extract_one_channel, cd, si)
+                for cd, si in resolved_jobs
+            ]
+            for fut in futures:
+                self._container.extend(fut.result())
 
     @property
     def files(self) -> List[Tuple[Path, Path]]:
