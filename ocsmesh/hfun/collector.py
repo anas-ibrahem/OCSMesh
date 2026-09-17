@@ -20,7 +20,7 @@ import tempfile
 import traceback
 from pathlib import Path
 from time import time
-from multiprocessing import Pool, cpu_count
+from multiprocessing import Pool
 from copy import copy, deepcopy
 from typing import (
     Union, Sequence, List, Tuple, Iterable, Any, Optional, Callable)
@@ -46,6 +46,7 @@ from rasterio.warp import reproject, Resampling
 import rasterio
 
 from ocsmesh import utils
+from ocsmesh.utils import effective_cpu_count
 from ocsmesh.internal import MeshData
 from ocsmesh.hfun.base import BaseHfun
 from ocsmesh.hfun.raster import HfunRaster
@@ -1040,7 +1041,7 @@ class HfunCollector(BaseHfun):
         self._creator_pid = os.getpid()
         # Check nprocs
         nprocs = -1 if nprocs is None else nprocs
-        nprocs = cpu_count() if nprocs == -1 else nprocs
+        nprocs = effective_cpu_count() if nprocs == -1 else nprocs
 
         self._applied = False
         self._size_info = {'hmin': hmin, 'hmax': hmax}
@@ -2366,7 +2367,7 @@ class HfunCollector(BaseHfun):
                         'global_hmin': hfun._hmin,  # pylint: disable=W0212
                         'global_hmax': hfun._hmax,  # pylint: disable=W0212
                         'shape_files': shape_file_list,
-                        'worker_nprocs': self._nprocs if self.execution_mode == 'mpi' else 1
+                        'worker_nprocs': -1 if self.execution_mode == 'mpi' else 1
                     }
                     for idx, hfun in parallel_targets.items()
                 ]

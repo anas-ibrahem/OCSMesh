@@ -3,9 +3,10 @@ from itertools import permutations
 from typing import Union, Dict, Sequence, Tuple, List
 from functools import reduce
 from concurrent.futures import ThreadPoolExecutor
-from multiprocessing import cpu_count, Pool, current_process
+from multiprocessing import Pool, current_process
 from copy import deepcopy
 import logging
+import os
 import warnings
 
 from matplotlib.path import Path
@@ -1566,6 +1567,32 @@ class _ThreadPool:
         """No-op — ThreadPoolExecutor.shutdown already joins."""
 
 
+def effective_cpu_count() -> int:
+    """Return the number of CPU cores actually available to this process.
+
+    On Linux (including HPC nodes managed by SLURM/cgroups/taskset),
+    ``os.sched_getaffinity(0)`` returns the *affinity mask* of the current
+    process — i.e. only the cores the scheduler has pinned it to.  This is
+    the correct value to use when sizing a thread or process pool, because
+    the machine's *total* core count (as reported by ``os.cpu_count()``) may
+    be much larger than the allocation given to this MPI rank.
+
+    Example::
+
+        # 4-rank job on a 16-core node: SLURM pins each rank to 4 cores.
+        # os.cpu_count()        → 16  (wrong — would oversubscribe)
+        # effective_cpu_count() →  4  (correct)
+
+    Falls back to ``os.cpu_count()`` on platforms that do not implement
+    ``sched_getaffinity`` (macOS, Windows).
+    """
+    try:
+        return len(os.sched_getaffinity(0))
+    except AttributeError:
+        # macOS / Windows: sched_getaffinity is not available.
+        return os.cpu_count() or 1
+
+
 def add_pool_args(func):
     """Give a function `nprocs=`/`pool=` kwargs and hand it a `pool`.
 
@@ -1591,7 +1618,7 @@ def add_pool_args(func):
 
         # Check nprocs
         nprocs = -1 if nprocs is None else nprocs
-        nprocs = cpu_count() if nprocs == -1 else nprocs
+        nprocs = effective_cpu_count() if nprocs == -1 else nprocs
 
         if nprocs <= 1 or current_process().daemon:
             # Sequential: no child process, so this is safe inside a worker.

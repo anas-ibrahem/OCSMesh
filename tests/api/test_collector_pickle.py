@@ -9,6 +9,7 @@ from pathlib import Path
 import numpy as np
 import numpy.testing as npt
 from shapely import geometry
+from unittest.mock import patch, MagicMock
 
 from ocsmesh import Hfun, Mesh, Raster
 from ocsmesh.hfun.raster import HfunRaster
@@ -624,6 +625,50 @@ class TestHfunCollectorExecution(unittest.TestCase):
         npt.assert_allclose(
             np.mean(meshdata_serial.values),
             np.mean(meshdata_parallel.values), rtol=1e-5)
+
+    @patch('ocsmesh.hfun.collector._configure_mpi_environment')
+    @patch('ocsmesh.hfun.collector._is_mpi_active', return_value=True)
+    @patch('ocsmesh.hfun.collector._get_mpi', return_value=MagicMock())
+    @patch('ocsmesh.hfun.collector._is_mpi_env_detected', return_value=True)
+    @patch('ocsmesh.hfun.collector.HfunCollector._dispatch_refinement_tasks')
+    def test_collector_passes_negative_one_for_mpi_workers(
+        self, mock_dispatch, mock_env, mock_get_mpi, mock_active, mock_config
+    ):
+        """HfunCollector must send worker_nprocs=-1 in MPI mode so each
+        worker measures its own affinity via effective_cpu_count(), rather
+        than baking in the coordinator's core count at construction time.
+
+        This guards against a regression back to
+        'worker_nprocs': self._nprocs, which silently breaks on
+        heterogeneous SLURM allocations where the coordinator and workers
+        have different core counts.
+        """
+        hfun = Hfun(self.raster_list, nprocs=8)
+        # Use add_contour with a level so it correctly populates the
+        # _refine_contour_info_coll and triggers _apply_shape_refinements
+        hfun.add_contour(level=0.0, target_size=1, expansion_rate=0.1)
+
+        # 1. MPI Mode
+        hfun.execution_mode = 'mpi'
+        hfun._apply_contours()
+        
+        mock_dispatch.assert_called_once()
+        tasks = mock_dispatch.call_args[0][1] # (kind, tasks)
+        self.assertTrue(len(tasks) > 0)
+        for task in tasks:
+            self.assertEqual(task['worker_nprocs'], -1)
+            
+        mock_dispatch.reset_mock()
+            
+        # 2. Parallel mode
+        hfun.execution_mode = 'parallel'
+        hfun._apply_contours()
+        
+        mock_dispatch.assert_called_once()
+        tasks = mock_dispatch.call_args[0][1]
+        self.assertTrue(len(tasks) > 0)
+        for task in tasks:
+            self.assertEqual(task['worker_nprocs'], 1)
 
 
 if __name__ == '__main__':
