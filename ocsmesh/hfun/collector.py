@@ -600,38 +600,44 @@ def _flow_limiter_task_worker(task: dict):
     global_hmax = task['global_hmax']
     limiter_params_list = task['limiter_params']
 
-    # Let's initialize directly from the input path.
-
-    # 2. Create the necessary Raster and HfunRaster instances INSIDE the worker.
-    topo_raster = Raster(topo_input_path)
-    worker_hfun = HfunRaster(
-        raster=topo_raster,
-        hmin=global_hmin,
-        hmax=global_hmax,
-        verbosity=0,
-        initial_value=hfun_input_path
-    )
-
-    # 3. Apply all the required flow limiter refinements.
-    #    Each call will modify the worker_hfun's internal state (_tmpfile).
-    for params in limiter_params_list:
-        worker_hfun.add_subtidal_flow_limiter(
-            hmin=params['hmin'],
-            hmax=params['hmax'],
-            lower_bound=params['zmin'],
-            upper_bound=params['zmax']
+    try:
+        # 2. Create the necessary Raster and HfunRaster instances INSIDE the worker.
+        topo_raster = Raster(topo_input_path)
+        worker_hfun = HfunRaster(
+            raster=topo_raster,
+            hmin=global_hmin,
+            hmax=global_hmax,
+            verbosity=0,
+            initial_value=hfun_input_path
         )
 
-    # 4. Explicitly save the final state of the worker's
-    #    object to the designated output path.
-    worker_hfun.save(output_path)
+        # 3. Apply all the required flow limiter refinements.
+        #    Each call will modify the worker_hfun's internal state (_tmpfile).
+        for params in limiter_params_list:
+            worker_hfun.add_subtidal_flow_limiter(
+                hmin=params['hmin'],
+                hmax=params['hmax'],
+                lower_bound=params['zmin'],
+                upper_bound=params['zmax']
+            )
 
-    # 5. The work is done. Return the simple result dictionary.
-    return {
-        'status': 'success',
-        'original_index': original_index,
-        'output_path': output_path
-    }
+        # 4. Explicitly save the final state of the worker's
+        #    object to the designated output path.
+        worker_hfun.save(output_path)
+
+        # 5. The work is done. Return the simple result dictionary.
+        return {
+            'status': 'success',
+            'original_index': original_index,
+            'output_path': output_path
+        }
+
+    except Exception:  # pylint: disable=broad-exception-caught
+        return {
+            'status': 'error',
+            'original_index': original_index,
+            'error': traceback.format_exc(),
+        }
 
 
 def _const_val_task_worker(task: dict):
@@ -650,35 +656,43 @@ def _const_val_task_worker(task: dict):
     global_hmax = task['global_hmax']
     const_val_rules = task['const_val_rules']
 
-    # 2. Create the necessary Raster and HfunRaster instances INSIDE the worker.
-    #    This is the "Wrap Existing Painting" mode.
-    topo_raster = Raster(topo_input_path)
-    worker_hfun = HfunRaster(
-        raster=topo_raster,
-        hmin=global_hmin,
-        hmax=global_hmax,
-        verbosity=0,
-        initial_value=hfun_input_path
-    )
-
-    # 3. Apply all the required constant value refinements for this raster.
-    for rule in const_val_rules:
-        worker_hfun.add_constant_value(
-            value=rule['value'],
-            lower_bound=rule['lower_bound'],
-            upper_bound=rule['upper_bound']
+    try:
+        # 2. Create the necessary Raster and HfunRaster instances INSIDE the worker.
+        #    This is the "Wrap Existing Painting" mode.
+        topo_raster = Raster(topo_input_path)
+        worker_hfun = HfunRaster(
+            raster=topo_raster,
+            hmin=global_hmin,
+            hmax=global_hmax,
+            verbosity=0,
+            initial_value=hfun_input_path
         )
 
-    # 4. Explicitly save the final state of the worker's object to the
-    #    designated output path.
-    worker_hfun.save(output_path)
+        # 3. Apply all the required constant value refinements for this raster.
+        for rule in const_val_rules:
+            worker_hfun.add_constant_value(
+                value=rule['value'],
+                lower_bound=rule['lower_bound'],
+                upper_bound=rule['upper_bound']
+            )
 
-    # 5. The work is done. Return a simple result dictionary.
-    return {
-        'status': 'success',
-        'original_index': original_index,
-        'output_path': output_path
-    }
+        # 4. Explicitly save the final state of the worker's object to the
+        #    designated output path.
+        worker_hfun.save(output_path)
+
+        # 5. The work is done. Return a simple result dictionary.
+        return {
+            'status': 'success',
+            'original_index': original_index,
+            'output_path': output_path
+        }
+
+    except Exception:  # pylint: disable=broad-exception-caught
+        return {
+            'status': 'error',
+            'original_index': original_index,
+            'error': traceback.format_exc(),
+        }
 
 
 def _constraints_task_worker(task: dict):
@@ -700,29 +714,37 @@ def _constraints_task_worker(task: dict):
     global_hmax = task['global_hmax']
     constraint_list = task['constraint_list']
 
-    # 2. Create the necessary Raster and HfunRaster instances INSIDE the worker.
-    topo_raster = Raster(topo_input_path)
-    worker_hfun = HfunRaster(
-        raster=topo_raster,
-        hmin=global_hmin,
-        hmax=global_hmax,
-        verbosity=0,
-        initial_value=hfun_input_path
-    )
+    try:
+        # 2. Create the necessary Raster and HfunRaster instances INSIDE the worker.
+        topo_raster = Raster(topo_input_path)
+        worker_hfun = HfunRaster(
+            raster=topo_raster,
+            hmin=global_hmin,
+            hmax=global_hmax,
+            verbosity=0,
+            initial_value=hfun_input_path
+        )
 
-    # 3. Apply the constraint objects using the existing HfunRaster method.
-    #    This handles windowed processing, hmin/hmax clamping, etc.
-    worker_hfun.apply_constraints(constraint_list)
+        # 3. Apply the constraint objects using the existing HfunRaster method.
+        #    This handles windowed processing, hmin/hmax clamping, etc.
+        worker_hfun.apply_constraints(constraint_list)
 
-    # 4. Save the final state to the designated output path.
-    worker_hfun.save(output_path)
+        # 4. Save the final state to the designated output path.
+        worker_hfun.save(output_path)
 
-    # 5. Return a simple result dictionary.
-    return {
-        'status': 'success',
-        'original_index': original_index,
-        'output_path': output_path
-    }
+        # 5. Return a simple result dictionary.
+        return {
+            'status': 'success',
+            'original_index': original_index,
+            'output_path': output_path
+        }
+
+    except Exception:  # pylint: disable=broad-exception-caught
+        return {
+            'status': 'error',
+            'original_index': original_index,
+            'error': traceback.format_exc(),
+        }
 
 
 
