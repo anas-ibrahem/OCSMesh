@@ -1289,7 +1289,7 @@ class HfunRaster(BaseHfun, Raster):
                             f"Transform creation took {time() - start2:f}")
                     start2 = time()
                     win_feature = utils.run_starmap(
-                        pool,
+                        None,
                         ops.transform,
                         [(transformer.transform, linestring)
                          for linestring in win_feature]
