@@ -26,7 +26,13 @@ import hybrid_util as hu  # noqa: E402
 HMIN = 200
 HMAX = 5000
 CONFIG = 'B'
-CONFIG_DESC = 'contours + channels'
+CONFIG_DESC = 'contours + channels (4x heavy: 4 levels, 4 channel widths)'
+
+CONTOUR_LEVELS = [-12, -4, 4, 12]
+CONTOUR_TARGET_SIZE = 500  # metres
+
+CHANNEL_WIDTHS = [500, 1000, 2000, 4000]  # metres
+CHANNEL_TARGET_SIZE = 500  # metres
 
 
 def make_tiles(out_dir, n_tiles, size):
@@ -38,7 +44,7 @@ def make_tiles(out_dir, n_tiles, size):
         x0 = i * (span - overlap)
         x1 = x0 + span
         gx, gy = np.mgrid[x0:x1:complex(0, size), 0:1:complex(0, size)]
-        z = (gy * 40.0) - 20.0 + 3.0 * np.sin(gx * 6.0)
+        z = (gy * 40.0) - 20.0
         path = Path(out_dir) / f'dem_{i}.tif'
         ocsmesh.utils.raster_from_numpy(path, z, (gx, gy), 4326)
         paths.append(path)
@@ -52,9 +58,22 @@ def build_and_run(tile_paths, nprocs, execution_mode):
         hmin=HMIN, hmax=HMAX, nprocs=nprocs, method='exact')
     hfun.execution_mode = execution_mode
 
-    # Config B: contours + channels
-    hfun.add_contour(level=0, expansion_rate=0.005, target_size=500)
-    hfun.add_channel(level=0, width=2000, target_size=500, expansion_rate=0.005)
+    # Config B (heavy): 8 contour levels + 5 channel widths, tight target_size.
+    # Each call → separate shape set → the shape-loop is CPU-heavy
+    # → intra-rank Pool has real work to parallelize.
+    for level in CONTOUR_LEVELS:
+        hfun.add_contour(
+            level=level,
+            expansion_rate=0.005,
+            target_size=CONTOUR_TARGET_SIZE,
+        )
+    for width in CHANNEL_WIDTHS:
+        hfun.add_channel(
+            level=0,
+            width=width,
+            target_size=CHANNEL_TARGET_SIZE,
+            expansion_rate=0.005,
+        )
 
     start = time.perf_counter()
     msh = hfun.msh_t()

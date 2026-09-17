@@ -38,7 +38,10 @@ import hybrid_util as hu  # noqa: E402
 HMIN = 200
 HMAX = 5000
 CONFIG = 'A'
-CONFIG_DESC = 'contours only'
+CONFIG_DESC = 'contours only (4x heavy: 4 levels)'
+
+CONTOUR_LEVELS = [-12, -4, 4, 12]
+CONTOUR_TARGET_SIZE = 500  # metres
 
 
 def make_tiles(out_dir, n_tiles, size):
@@ -50,7 +53,7 @@ def make_tiles(out_dir, n_tiles, size):
         x0 = i * (span - overlap)
         x1 = x0 + span
         gx, gy = np.mgrid[x0:x1:complex(0, size), 0:1:complex(0, size)]
-        z = (gy * 40.0) - 20.0 + 3.0 * np.sin(gx * 6.0)
+        z = (gy * 40.0) - 20.0
         path = Path(out_dir) / f'dem_{i}.tif'
         ocsmesh.utils.raster_from_numpy(path, z, (gx, gy), 4326)
         paths.append(path)
@@ -64,8 +67,15 @@ def build_and_run(tile_paths, nprocs, execution_mode):
         hmin=HMIN, hmax=HMAX, nprocs=nprocs, method='exact')
     hfun.execution_mode = execution_mode
 
-    # Config A: contours only
-    hfun.add_contour(level=0, expansion_rate=0.005, target_size=500)
+    # Config A (heavy): 10 contour levels, tight target_size.
+    # Many contour-line shapes per tile → expensive shape loop
+    # → meaningful intra-rank parallelism benchmark.
+    for level in CONTOUR_LEVELS:
+        hfun.add_contour(
+            level=level,
+            expansion_rate=0.005,
+            target_size=CONTOUR_TARGET_SIZE,
+        )
 
     start = time.perf_counter()
     msh = hfun.msh_t()
