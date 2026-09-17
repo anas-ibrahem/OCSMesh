@@ -1267,7 +1267,7 @@ class HfunRaster(BaseHfun, Raster):
                 _logger.info('Repartitioning features...')
                 start = time()
                 res = utils.run_starmap(
-                    pool,
+                    None,
                     utils.repartition_features,
                     [(linestring, max_verts) for linestring in feature]
                     )
@@ -1298,7 +1298,7 @@ class HfunRaster(BaseHfun, Raster):
                             f"Transform apply took {time() - start2:f}")
 
                 transformed_features = utils.run_starmap(
-                    pool,
+                    None,
                     utils.transform_linestring,
                     [(linestring, target_size) for linestring in win_feature]
                 )
