@@ -137,6 +137,80 @@ class _RefinementContourInfoCollector:
 
 
 
+def _contour_calculate_worker(task: dict):
+    """Pool worker: extract one contour level from one raster source.
+
+    Receives only picklable plain data (file paths, scalars) and
+    reconstructs the ``Raster`` inside the child process so that each
+    worker has its own rasterio file handle.  No shared state between
+    workers — safe for ``multiprocessing.Pool``.
+
+    Parameters
+    ----------
+    task : dict
+        Keys: ``raster_path``, ``level``, ``expansion_rate``,
+        ``target_size``, ``feather_path``, ``crs_path``.
+
+    Returns
+    -------
+    tuple[Path, Path]
+        Paths to the written feather and CRS JSON files.
+    """
+    from ocsmesh.raster import Raster  # local import avoids circular issues
+    raster = Raster(task['raster_path'])
+    contour = raster.get_contour(task['level'])
+    crs = raster.crs
+    feather_path = Path(task['feather_path'])
+    crs_path = Path(task['crs_path'])
+    gpd.GeoDataFrame(
+        {'geometry': [contour],
+         'expansion_rate': task['expansion_rate'],
+         'target_size': task['target_size']},
+        crs=crs).to_feather(feather_path)
+    gc.collect()
+    with open(crs_path, 'w') as fp:
+        fp.write(crs.to_json())
+    return feather_path, crs_path
+
+
+def _channel_calculate_worker(task: dict):
+    """Pool worker: extract one channel width from one raster source.
+
+    Same design as ``_contour_calculate_worker``: receives picklable plain
+    data and opens its own rasterio handle inside the child process.
+
+    Parameters
+    ----------
+    task : dict
+        Keys: ``raster_path``, ``level``, ``width``, ``tolerance``,
+        ``expansion_rate``, ``target_size``, ``feather_path``, ``crs_path``.
+
+    Returns
+    -------
+    tuple[Path, Path] or None
+        Paths to the written feather and CRS JSON files, or ``None`` when
+        the raster contains no channels for this (level, width) pair.
+    """
+    from ocsmesh.raster import Raster  # local import avoids circular issues
+    raster = Raster(task['raster_path'])
+    channels = raster.get_channels(
+        task['level'], task['width'], task['tolerance'])
+    if channels is None:
+        return None
+    crs = raster.crs
+    feather_path = Path(task['feather_path'])
+    crs_path = Path(task['crs_path'])
+    gpd.GeoDataFrame(
+        {'geometry': [channels],
+         'expansion_rate': task['expansion_rate'],
+         'target_size': task['target_size']},
+        crs=crs).to_feather(feather_path)
+    gc.collect()
+    with open(crs_path, 'w') as fp:
+        fp.write(crs.to_json())
+    return feather_path, crs_path
+
+
 class _RefinementContourCollector:
     """Collection for extracted refinement contours
 
@@ -163,16 +237,16 @@ class _RefinementContourCollector:
     def calculate(
             self,
             source_list: Iterable[HfunRaster],
-            out_path: Union[Path, str]
+            out_path: Union[Path, str],
+            nprocs: int = 1
             ) -> None:
         """Extract specified contours and store on disk in `out_path`.
 
-        Each contour level definition is extracted concurrently in its
-        own thread (one thread per level).  The heavy work inside
-        ``iter_contours`` — rasterio reads and marching-squares via
-        NumPy/scikit-image — releases the GIL, so threads give real
-        wall-time speedup.  Each thread only reads from its own source
-        objects (no sharing of rasterio handles between threads).
+        Contour levels are extracted in parallel when ``nprocs > 1``.
+        Each pool worker receives only picklable plain data (raster file
+        path, level, output paths) and opens its own rasterio handle
+        inside the child process, so there is no shared state and no
+        thread-safety concerns.
 
         Parameters
         ----------
@@ -181,6 +255,8 @@ class _RefinementContourCollector:
             must be calculated.
         out_path : path-like
             Path for storing calculated contours and their crs data.
+        nprocs : int, default=1
+            Number of worker processes.  1 runs sequentially (no Pool).
 
         Returns
         -------
@@ -192,52 +268,44 @@ class _RefinementContourCollector:
         pid = os.getpid()
         self._container.clear()
 
-        # Resolve sources once (before threading) to avoid mutating shared
-        # contour_defn objects from multiple threads simultaneously.
-        resolved_jobs = []
+        # Build flat list of tasks: one task per (contour_level, source_tile).
+        # Each task carries only picklable plain data.
+        tasks = []
+        file_counter = 0
         for contour_defn, size_info in self._contours_info:
             if not contour_defn.has_source:
                 # Copy so that in case of a 2nd run the no-source
-                # contour still gets all current sources
+                # contour still gets all current sources.
                 contour_defn = copy(contour_defn)
                 for source in source_list:
                     contour_defn.add_source(source)
-            resolved_jobs.append((contour_defn, size_info))
 
-        # Atomic counter for unique file names across threads.
-        _lock = threading.Lock()
-        _counter = [0]
+            for source in contour_defn.sources:
+                file_counter += 1
+                tasks.append({
+                    'raster_path': source._raster.path,  # pylint: disable=W0212
+                    'level': contour_defn.level,
+                    'expansion_rate': size_info['expansion_rate'],
+                    'target_size': size_info['target_size'],
+                    'feather_path': str(
+                        out_dir / f"contour_{pid}_{file_counter}.feather"),
+                    'crs_path': str(
+                        out_dir / f"crs_{pid}_{file_counter}.json"),
+                })
 
-        def _extract_one_level(contour_defn, size_info):
-            """Extract all tiles for one contour level; called in a thread."""
-            local_results = []
-            for contour, crs in contour_defn.iter_contours():
-                with _lock:
-                    _counter[0] += 1
-                    fc = _counter[0]
-                feather_path = out_dir / f"contour_{pid}_{fc}.feather"
-                crs_path = out_dir / f"crs_{pid}_{fc}.json"
-                gpd.GeoDataFrame(
-                    {'geometry': [contour],
-                     'expansion_rate': size_info['expansion_rate'],
-                     'target_size': size_info['target_size']},
-                    crs=crs).to_feather(feather_path)
-                gc.collect()
-                with open(crs_path, 'w') as fp:
-                    fp.write(crs.to_json())
-                local_results.append((feather_path, crs_path))
-            return local_results
+        if not tasks:
+            return
 
-        n_workers = max(1, min(len(resolved_jobs), os.cpu_count() or 1))
-        with ThreadPoolExecutor(max_workers=n_workers) as executor:
-            # Submit one future per level definition; preserve submission order
-            # so _container order is deterministic.
-            futures = [
-                executor.submit(_extract_one_level, cd, si)
-                for cd, si in resolved_jobs
-            ]
-            for fut in futures:
-                self._container.extend(fut.result())
+        if nprocs > 1:
+            n_workers = min(nprocs, len(tasks))
+            with Pool(processes=n_workers) as pool:
+                results = pool.map(_contour_calculate_worker, tasks)
+        else:
+            results = [_contour_calculate_worker(t) for t in tasks]
+
+        for pair in results:
+            if pair is not None:
+                self._container.append((Path(pair[0]), Path(pair[1])))
 
 
     @property
@@ -488,15 +556,14 @@ class _ChannelRefineCollector:
     def calculate(
             self,
             source_list,
-            out_path
+            out_path,
+            nprocs: int = 1
             ) -> None:
         """Extract specified channels and store on disk in `out_path`.
 
-        Each channel definition (width) is extracted concurrently in its
-        own thread (one thread per channel definition).  The heavy work
-        inside ``iter_channels`` — rasterio reads and polygon extraction
-        via NumPy/GEOS — releases the GIL, so threads give real wall-time
-        speedup.  Each thread only reads from its own source objects.
+        Channel definitions (widths) are extracted in parallel when
+        ``nprocs > 1``.  Each pool worker receives only picklable plain
+        data and opens its own rasterio handle inside the child process.
 
         Parameters
         ----------
@@ -505,6 +572,8 @@ class _ChannelRefineCollector:
             must be calculated.
         out_path : path-like
             Path for storing calculated channels and their crs data.
+        nprocs : int, default=1
+            Number of worker processes.  1 runs sequentially (no Pool).
 
         Returns
         -------
@@ -516,49 +585,45 @@ class _ChannelRefineCollector:
         pid = os.getpid()
         self._container.clear()
 
-        # Resolve sources once before threading.
-        resolved_jobs = []
+        # Build flat list of tasks: one task per (channel_defn, source_tile).
+        tasks = []
+        file_counter = 0
         for channel_defn, size_info in self._channels_info:
             if not channel_defn.has_source:
                 # Copy so that in case of a 2nd run the no-source
-                # channel still gets all current sources
+                # channel still gets all current sources.
                 channel_defn = copy(channel_defn)
                 for source in source_list:
                     channel_defn.add_source(source)
-            resolved_jobs.append((channel_defn, size_info))
 
-        # Atomic counter for unique file names across threads.
-        _lock = threading.Lock()
-        _counter = [0]
+            for source in channel_defn.sources:
+                file_counter += 1
+                tasks.append({
+                    'raster_path': source._raster.path,  # pylint: disable=W0212
+                    'level': channel_defn.level,
+                    'width': channel_defn.width,
+                    'tolerance': channel_defn._tolerance,  # pylint: disable=W0212
+                    'expansion_rate': size_info['expansion_rate'],
+                    'target_size': size_info['target_size'],
+                    'feather_path': str(
+                        out_dir / f"channels_{pid}_{file_counter}.feather"),
+                    'crs_path': str(
+                        out_dir / f"crs_{pid}_{file_counter}.json"),
+                })
 
-        def _extract_one_channel(channel_defn, size_info):
-            """Extract all tiles for one channel definition; called in a thread."""
-            local_results = []
-            for channels, crs in channel_defn.iter_channels():
-                with _lock:
-                    _counter[0] += 1
-                    fc = _counter[0]
-                feather_path = out_dir / f"channels_{pid}_{fc}.feather"
-                crs_path = out_dir / f"crs_{pid}_{fc}.json"
-                gpd.GeoDataFrame(
-                    {'geometry': [channels],
-                     'expansion_rate': size_info['expansion_rate'],
-                     'target_size': size_info['target_size']},
-                    crs=crs).to_feather(feather_path)
-                gc.collect()
-                with open(crs_path, 'w') as fp:
-                    fp.write(crs.to_json())
-                local_results.append((feather_path, crs_path))
-            return local_results
+        if not tasks:
+            return
 
-        n_workers = max(1, min(len(resolved_jobs), os.cpu_count() or 1))
-        with ThreadPoolExecutor(max_workers=n_workers) as executor:
-            futures = [
-                executor.submit(_extract_one_channel, cd, si)
-                for cd, si in resolved_jobs
-            ]
-            for fut in futures:
-                self._container.extend(fut.result())
+        if nprocs > 1:
+            n_workers = min(nprocs, len(tasks))
+            with Pool(processes=n_workers) as pool:
+                results = pool.map(_channel_calculate_worker, tasks)
+        else:
+            results = [_channel_calculate_worker(t) for t in tasks]
+
+        for pair in results:
+            if pair is not None:
+                self._container.append((Path(pair[0]), Path(pair[1])))
 
     @property
     def files(self) -> List[Tuple[Path, Path]]:
@@ -852,16 +917,11 @@ def _replay_shapes_task_worker(task: dict, method_name: str, shape_kwarg: str):
                 if transformer is not None:
                     shape = ops.transform(transformer.transform, shape)
 
-                # use_threads=True -> _ThreadPool uses threads instead
-                # of processes, eliminating pickling overhead. Safe
-                # here because the heavy work (NumPy, cKDTree, GEOS)
-                # releases the GIL.
                 apply_shape(**{
                     shape_kwarg: shape,
                     'expansion_rate': row.expansion_rate,
                     'target_size': row.target_size,
                     'nprocs': worker_nprocs,
-                    'use_threads': True
                 })
 
         # 4. Save the final state to the designated output path.
@@ -2204,7 +2264,8 @@ class HfunCollector(BaseHfun):
         with tempfile.TemporaryDirectory() as temp_path:
             with Pool(processes=self._nprocs) as p:
                 # Contours are ONLY extracted from raster sources
-                self._contour_coll.calculate(raster_hfun_list, temp_path)
+                self._contour_coll.calculate(
+                    raster_hfun_list, temp_path, nprocs=self._nprocs)
                 counter = 0
                 for hfun in apply_to:
                     for gdf in self._contour_coll:
@@ -2413,7 +2474,7 @@ class HfunCollector(BaseHfun):
                 os.makedirs(shape_dir, exist_ok=True)
 
                 # Shapes are ONLY extracted from raster sources
-                coll.calculate(raster_hfun_list, shape_dir)
+                coll.calculate(raster_hfun_list, shape_dir, nprocs=self._nprocs)
                 shape_file_list = coll.files
 
                 tasks = [
@@ -2532,7 +2593,8 @@ class HfunCollector(BaseHfun):
 
         with tempfile.TemporaryDirectory() as temp_path:
             # Channels are ONLY extracted from raster sources
-            self._channels_coll.calculate(raster_hfun_list, temp_path)
+            self._channels_coll.calculate(
+                raster_hfun_list, temp_path, nprocs=self._nprocs)
             counter = 0
             with Pool(processes=self._nprocs) as p:
                 for hfun in apply_to:
