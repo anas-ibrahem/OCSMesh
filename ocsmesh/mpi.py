@@ -309,6 +309,26 @@ class MPIExecutor:
         """
         cls._registered_ops[name] = fn
 
+    @classmethod
+    def get_op(cls, name):
+        """Return the registered worker function for the given op name.
+
+        Public counterpart to :meth:`register_op`.  Callers should use
+        this rather than accessing ``_registered_ops`` directly so that
+        the internal storage shape can change without breaking callsites.
+
+        Parameters
+        ----------
+        name : str
+            Operation name as registered via :meth:`register_op`.
+
+        Returns
+        -------
+        callable or None
+            The registered worker function, or ``None`` if not found.
+        """
+        return cls._registered_ops.get(name)
+
     def _worker_registry(self):
         """Return the current operation -> function mapping."""
         return dict(self._registered_ops)

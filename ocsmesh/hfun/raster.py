@@ -40,6 +40,7 @@ from ocsmesh.features.constraint import (
     Constraint,
     TopoConstConstraint,
     TopoFuncConstraint,
+    _default_topo_func,
     CourantNumConstraint,
     RegionConstraint,
     apply_constraints_wrap
@@ -709,7 +710,7 @@ class HfunRaster(BaseHfun, Raster):
     def add_topo_func_constraint(
             self,
             func: Callable[[npt.NDArray[np.float32]], npt.NDArray[np.float32]]
-                = lambda i: i / 2.0,
+                = _default_topo_func,
             upper_bound: float = np.inf,
             lower_bound: float = -np.inf,
             value_type: Literal['min', 'max'] = 'min',
