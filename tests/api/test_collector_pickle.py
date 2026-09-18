@@ -17,6 +17,12 @@ from ocsmesh import Hfun, Mesh, Raster
 from ocsmesh.features.constraint import _default_topo_func
 from ocsmesh.hfun.raster import HfunRaster
 from ocsmesh.utils import raster_from_numpy
+from ocsmesh.hfun.collector import (
+    _flow_limiter_task_worker,
+    _const_val_task_worker,
+    _constraints_task_worker,
+)
+
 
 
 
@@ -780,7 +786,6 @@ class TestHfunCollectorExecution(unittest.TestCase):
         Key point: RegionConstraint is pickleable and must dispatch through
         the same 'constraints' op key as other constraint types.
         """
-        from ocsmesh.features.constraint import RegionConstraint
         region = geometry.box(0.2, 0.2, 0.8, 0.8)
 
         for mode in ('serial', 'parallel'):
@@ -789,7 +794,7 @@ class TestHfunCollectorExecution(unittest.TestCase):
                     self.raster_list, nprocs=2, hmin=10, hmax=1000)
                 hfun.execution_mode = mode
                 hfun.add_region_constraint(
-                    value=50, regions=region, value_type='min')
+                    value=50, shape=region, value_type='min')
 
                 meshdata = hfun.meshdata()
                 self.assertIsNotNone(meshdata)
@@ -804,11 +809,6 @@ class TestHfunCollectorExecution(unittest.TestCase):
         This guards against a regression of the bug where the coordinator's
         failure-checking code (r['status'] == 'error') was dead code.
         """
-        from ocsmesh.hfun.collector import (
-            _flow_limiter_task_worker,
-            _const_val_task_worker,
-            _constraints_task_worker,
-        )
 
         bad_path = '/nonexistent/path/that/does/not/exist.tif'
         base_task = {
