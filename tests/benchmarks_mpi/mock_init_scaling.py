@@ -42,6 +42,18 @@ HMAX = 5000
 OCSMESH_TMPDIR = Path(tempfile.gettempdir()) / 'ocsmesh'
 
 
+def count_tmp_files():
+    """Count all files in ocsmesh's TMPDIR.
+
+    raster.modifying_raster() uses tempfile.mkstemp(prefix=tmpdir) where
+    tmpdir ends with '/'. This creates extensionless files like
+    /tmp/ocsmesh/tmpXXXXXX — NOT .tif files. We must count all files.
+    """
+    if not OCSMESH_TMPDIR.exists():
+        return 0
+    return sum(1 for f in OCSMESH_TMPDIR.iterdir() if f.is_file())
+
+
 def make_tiles(out_dir, n_tiles, size):
     """Write n_tiles DEM tiles side by side (same pattern as e2e benchmarks)."""
     paths = []
@@ -58,11 +70,7 @@ def make_tiles(out_dir, n_tiles, size):
     return paths
 
 
-def count_tif_files():
-    """Count .tif files in ocsmesh's TMPDIR right now."""
-    if not OCSMESH_TMPDIR.exists():
-        return 0
-    return sum(1 for f in OCSMESH_TMPDIR.iterdir() if f.suffix == '.tif')
+
 
 
 def main():
@@ -102,12 +110,13 @@ def main():
         tile_paths = hu.tile_paths(tdir, n_tiles)
 
         # ── All ranks construct HfunCollector (collective entry point) ────
-        # The bug / fix lives entirely inside __init__. We snapshot TMPDIR
-        # file count before and after to count writes per rank.
+        # The bug / fix lives entirely inside __init__.
+        # All ranks share the same node's /tmp/ocsmesh/ directory, so we
+        # measure the total TMPDIR file count at rank 0 before and after a
+        # barrier that brackets all ranks' __init__() calls.
         if rank == 0:
             print('\nAll ranks calling HfunCollector() ...')
-
-        before = count_tif_files()
+            before = count_tmp_files()
 
         with hu.CpuMeter(comm, cores=size, collective=(size > 1)) as meter:
             t0 = time.perf_counter()
@@ -117,38 +126,33 @@ def main():
             hfun.execution_mode = execution_mode
             init_time = time.perf_counter() - t0
 
-        after       = count_tif_files()
-        rank_writes = after - before
+        # CpuMeter already does a Barrier at exit (collective=True), so
+        # by here all ranks have finished __init__. Rank 0 counts the delta.
+        if rank == 0:
+            after        = count_tmp_files()
+            total_writes = after - before
 
-        # ── Gather per-rank stats to rank 0 ──────────────────────────────
+        # Gather init times for per-rank breakdown
         if size > 1:
-            all_writes     = comm.gather(rank_writes, root=0)
-            all_init_times = comm.gather(init_time,   root=0)
+            all_init_times = comm.gather(init_time, root=0)
         else:
-            all_writes     = [rank_writes]
             all_init_times = [init_time]
 
         # ── Report ────────────────────────────────────────────────────────
         if rank == 0:
-            total_writes = sum(all_writes)
             expected_bug = size * n_tiles
             expected_fix = n_tiles
 
             print(f'\n--- Results ---')
-            print(f'  Total tmp .tif files written (all ranks): {total_writes}')
-            print(f'  Expected if BUG: {expected_bug}')
-            print(f'  Expected if FIX: {expected_fix}')
+            print(f'  Total tmp files written to TMPDIR (all ranks): {total_writes}')
+            print(f'  Expected if BUG: {expected_bug}  ({size} ranks × {n_tiles} tiles)')
+            print(f'  Expected if FIX: {expected_fix}  (rank 0 only)')
             print(f'  init_time — rank 0: {all_init_times[0]:.3f}s'
                   + (f'  |  max worker: '
                      f'{max(all_init_times[1:]):.3f}s '
                      f'(should be ~0s if fix active)'
                      if size > 1 else ''))
             print(f'  {meter.format()}')
-
-            print(f'\n  Per-rank writes:')
-            for r, cnt in enumerate(all_writes):
-                tag = '← coordinator' if r == 0 else f'← worker {r}'
-                print(f'    rank {r:3d}: {cnt:4d} files  {tag}')
 
             print()
             if total_writes <= expected_fix:
@@ -167,12 +171,12 @@ def main():
                     'total_tmp_writes': total_writes,
                     'expected_fix':     expected_fix,
                     'expected_bug':     expected_bug,
-                    'per_rank_writes':  all_writes,
                     'per_rank_init_s':  all_init_times,
                     'meter':            meter.as_dict(),
                 }
                 args.json.write_text(json.dumps(out, indent=2))
                 print(f'Wrote {args.json}')
+
 
     finally:
         gc.collect()
