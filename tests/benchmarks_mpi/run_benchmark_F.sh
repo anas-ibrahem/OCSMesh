@@ -88,12 +88,13 @@ echo " PHASE 2 — VARIANT 1: 15 tiles (${SIZE_15}x${SIZE_15}), ${RANKS_15} rank
 echo "================================================================"
 
 echo ""
-echo "--- [V1] serial_mp (SKIPPED to prevent OOM on sandbox) ---"
-# PYTHONWARNINGS=ignore python "${BENCH}" \
-#     --mode serial_mp --tiles $TILES_15 --size $SIZE_15 \
-#     --json "${SCRIPT_DIR}/results_F_15t_serial_${TIMESTAMP}.json"
-# echo "  [sleep 120s cooldown]"
-# sync; sleep 120
+echo "--- [V1] serial_mp ---"
+PYTHONWARNINGS=ignore python "${BENCH}" \
+    --mode serial_mp --tiles $TILES_15 --size $SIZE_15 \
+    --json "${SCRIPT_DIR}/results_F_15t_serial_${TIMESTAMP}.json"
+echo "  [sleep 120s cooldown]"
+sync; sleep 120
+
 
 echo ""
 echo "--- [V1] mpi_no_pool (${RANKS_15} ranks, 1 core/rank) ---"
@@ -127,12 +128,12 @@ echo " PHASE 2 — VARIANT 2: 4 heavy tiles (${SIZE_HEAVY}x${SIZE_HEAVY}), ${RAN
 echo "================================================================"
 
 echo ""
-echo "--- [V2] serial_mp (SKIPPED to prevent OOM on sandbox) ---"
-# PYTHONWARNINGS=ignore python "${BENCH}" \
-#     --mode serial_mp --tiles $TILES_HEAVY --size $SIZE_HEAVY \
-#     --json "${SCRIPT_DIR}/results_F_4t_serial_${TIMESTAMP}.json"
-# echo "  [sleep 120s cooldown]"
-# sync; sleep 120
+echo "--- [V2] serial_mp ---"
+PYTHONWARNINGS=ignore python "${BENCH}" \
+    --mode serial_mp --tiles $TILES_HEAVY --size $SIZE_HEAVY \
+    --json "${SCRIPT_DIR}/results_F_4t_serial_${TIMESTAMP}.json"
+echo "  [sleep 120s cooldown]"
+sync; sleep 120
 
 echo ""
 echo "--- [V2] mpi_no_pool (${RANKS_HEAVY} ranks, 1 core/rank) ---"

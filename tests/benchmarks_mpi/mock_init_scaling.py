@@ -156,11 +156,11 @@ def main():
 
             print()
             if total_writes <= expected_fix:
-                print('  ✅  FIX CONFIRMED — only rank 0 wrote clip files.')
+                print('   FIX CONFIRMED — only rank 0 wrote clip files.')
             elif total_writes >= expected_bug:
-                print('  ❌  BUG REPRODUCED — all ranks wrote clip files.')
+                print(' XX BUG REPRODUCED — all ranks wrote clip files.')
             else:
-                print(f'  ⚠️   Partial: {total_writes} writes '
+                print(f'   Partial: {total_writes} writes '
                       f'(between fix={expected_fix} and bug={expected_bug})')
 
             if args.json:
