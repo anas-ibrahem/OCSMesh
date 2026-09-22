@@ -1186,6 +1186,23 @@ class HfunCollector(BaseHfun):
         #
         # TODO: CRS considerations
 
+        # MPI guard: only rank 0 performs tile clipping and builds _hfun_list.
+        # Without this guard, all N ranks clip all M tiles concurrently,
+        # producing N×M temporary file writes. On a shared parallel filesystem
+        # (Lustre/GPFS) this saturates the metadata server when N and M are
+        # large (e.g. 452 ranks × 451 tiles = 203,852 concurrent writes).
+        #
+        # Worker ranks skip this loop entirely. Their _hfun_list stays [].
+        # This is safe because every downstream method that reads _hfun_list
+        # is guarded by `is_coordinator = (execution_mode != 'mpi' or
+        # MPIExecutor.is_manager())` and workers return early after
+        # MPIExecutor.run() returns None.
+        #
+        # In serial / parallel mode, MPIExecutor.is_manager() always returns
+        # True (rank defaults to 0), so this guard is a no-op for non-MPI runs.
+        if not MPIExecutor.is_manager():
+            return
+
         for in_item in in_list:
             # Add supports(ext) to each hfun type?
 
