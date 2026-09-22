@@ -1186,16 +1186,18 @@ class HfunCollector(BaseHfun):
         #
         # TODO: CRS considerations
 
-        # MPI: only rank 0 clips tiles and builds _hfun_list to avoid N×M
-        # temporary-file writes that can overwhelm shared filesystem metadata servers.
+        # MPI: only rank 0 clips tiles to avoid N×M temporary-file writes
+        # that can overwhelm shared filesystem metadata servers.
         #
-        # Workers skip this loop and keep _hfun_list empty; downstream usage is
-        # already coordinator-only, so this is safe.
+        # Workers still build _hfun_list (with unclipped HfunRaster objects)
+        # so that serial/parallel Hfun objects constructed inside an mpiexec
+        # job continue to work correctly on all ranks. The memory used by
+        # this redundant work is freed when execution_mode is set to 'mpi'.
         #
-        # In serial/parallel modes, rank 0 is always the manager, so this is a no-op.
-        # _is_mpi_active() necessary for mpiexec
-        if _is_mpi_active() and not MPIExecutor.is_manager():
-            return
+        # TODO: A cleaner fix would be to know the execution mode upfront
+        # (e.g. by passing it to __init__) so workers could skip building
+        # _hfun_list entirely instead of building it and dropping it later.
+        is_mpi_worker = _is_mpi_active() and not MPIExecutor.is_manager()
 
         for in_item in in_list:
             # Add supports(ext) to each hfun type?
@@ -1211,20 +1213,22 @@ class HfunCollector(BaseHfun):
                             self._base_shape_crs, in_item.crs, always_xy=True)
                         clip_shape = ops.transform(
                                 transformer.transform, clip_shape)
-                    try:
-                        in_item.clip(clip_shape)
-                    except ValueError as err:
-                        # This raster does not intersect shape
-                        _logger.debug(err)
-                        continue
+                    if not is_mpi_worker:
+                        try:
+                            in_item.clip(clip_shape)
+                        except ValueError as err:
+                            # This raster does not intersect shape
+                            _logger.debug(err)
+                            continue
 
                 elif self._base_mesh:
-                    try:
-                        in_item.clip(self._base_mesh.mesh.get_bbox(crs=in_item.crs))
-                    except ValueError as err:
-                        # This raster does not intersect shape
-                        _logger.debug(err)
-                        continue
+                    if not is_mpi_worker:
+                        try:
+                            in_item.clip(self._base_mesh.mesh.get_bbox(crs=in_item.crs))
+                        except ValueError as err:
+                            # This raster does not intersect shape
+                            _logger.debug(err)
+                            continue
 
                 hfun = HfunRaster(in_item, **self._size_info)
 
@@ -1242,20 +1246,22 @@ class HfunCollector(BaseHfun):
                                 self._base_shape_crs, raster.crs, always_xy=True)
                             clip_shape = ops.transform(
                                     transformer.transform, clip_shape)
-                        try:
-                            raster.clip(clip_shape)
-                        except ValueError as err:
-                            # This raster does not intersect shape
-                            _logger.debug(err)
-                            continue
+                        if not is_mpi_worker:
+                            try:
+                                raster.clip(clip_shape)
+                            except ValueError as err:
+                                # This raster does not intersect shape
+                                _logger.debug(err)
+                                continue
 
                     elif self._base_mesh:
-                        try:
-                            raster.clip(self._base_mesh.mesh.get_bbox(crs=raster.crs))
-                        except ValueError as err:
-                            # This raster does not intersect shape
-                            _logger.debug(err)
-                            continue
+                        if not is_mpi_worker:
+                            try:
+                                raster.clip(self._base_mesh.mesh.get_bbox(crs=raster.crs))
+                            except ValueError as err:
+                                # This raster does not intersect shape
+                                _logger.debug(err)
+                                continue
 
                     hfun = HfunRaster(raster, **self._size_info)
 
@@ -2714,6 +2720,16 @@ class HfunCollector(BaseHfun):
             )
 
         self._execution_mode = mode
+
+        # If _hfun_list was already populated in __init__ (because mode was
+        # not known yet) , clear it on worker ranks — they don't use it.
+        # TODO: A cleaner fix would be to know the execution mode upfront
+        # in __init__ to avoid allocating this redundant memory in the first place.
+        if (mode == 'mpi'
+                and _is_mpi_active()
+                and not MPIExecutor.is_manager()):
+            self._hfun_list = []
+
 
 
     def _apply_flow_limiters(self) -> None:
