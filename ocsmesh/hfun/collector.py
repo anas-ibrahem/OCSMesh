@@ -1193,7 +1193,8 @@ class HfunCollector(BaseHfun):
         # already coordinator-only, so this is safe.
         #
         # In serial/parallel modes, rank 0 is always the manager, so this is a no-op.
-        if not MPIExecutor.is_manager():
+        # _is_mpi_active() necessary for mpiexec
+        if _is_mpi_active() and not MPIExecutor.is_manager():
             return
 
         for in_item in in_list:
