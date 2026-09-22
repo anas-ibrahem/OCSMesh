@@ -1186,6 +1186,16 @@ class HfunCollector(BaseHfun):
         #
         # TODO: CRS considerations
 
+        # MPI: only rank 0 clips tiles and builds _hfun_list to avoid N×M
+        # temporary-file writes that can overwhelm shared filesystem metadata servers.
+        #
+        # Workers skip this loop and keep _hfun_list empty; downstream usage is
+        # already coordinator-only, so this is safe.
+        #
+        # In serial/parallel modes, rank 0 is always the manager, so this is a no-op.
+        if not MPIExecutor.is_manager():
+            return
+
         for in_item in in_list:
             # Add supports(ext) to each hfun type?
 
