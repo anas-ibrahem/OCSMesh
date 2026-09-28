@@ -40,6 +40,7 @@ from ocsmesh.features.constraint import (
     Constraint,
     TopoConstConstraint,
     TopoFuncConstraint,
+    _default_topo_func,
     CourantNumConstraint,
     RegionConstraint,
     apply_constraints_wrap
@@ -52,7 +53,7 @@ warnings.filterwarnings(
 
 _logger = logging.getLogger(__name__)
 
-tmpdir = str(pathlib.Path(tempfile.gettempdir()+'/ocsmesh'))+'/'
+tmpdir = str(pathlib.Path(os.environ.get('TMPDIR', tempfile.gettempdir())+'/ocsmesh'))+'/'
 os.makedirs(tmpdir, exist_ok=True)
 
 # Maximum number of points to pass to the gmsh background sizing field
@@ -709,7 +710,7 @@ class HfunRaster(BaseHfun, Raster):
     def add_topo_func_constraint(
             self,
             func: Callable[[npt.NDArray[np.float32]], npt.NDArray[np.float32]]
-                = lambda i: i / 2.0,
+                = _default_topo_func,
             upper_bound: float = np.inf,
             lower_bound: float = -np.inf,
             value_type: Literal['min', 'max'] = 'min',

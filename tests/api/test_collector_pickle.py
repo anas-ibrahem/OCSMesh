@@ -8,12 +8,21 @@ from multiprocessing.pool import Pool
 from pathlib import Path
 import numpy as np
 import numpy.testing as npt
+import rasterio as rio
+from rasterio.transform import from_origin
 from shapely import geometry
 from unittest.mock import patch, MagicMock
 
 from ocsmesh import Hfun, Mesh, Raster
+from ocsmesh.features.constraint import _default_topo_func
 from ocsmesh.hfun.raster import HfunRaster
 from ocsmesh.utils import raster_from_numpy
+from ocsmesh.hfun.collector import (
+    _flow_limiter_task_worker,
+    _const_val_task_worker,
+    _constraints_task_worker,
+)
+
 
 
 
@@ -232,29 +241,36 @@ class TestHfunCollectorExecution(unittest.TestCase):
 
 
     @unittest.skipIf(IS_WINDOWS, 'Pickle tests not guaranteed stable on Windows due to I/O issues')
-    def test_parallel_falls_back_for_func_constraint(self):
+    def test_parallel_executes_func_constraint(self):
         """
-        Verify that when a TopoFuncConstraint (which stores a lambda)
-        is present, parallel mode gracefully falls back to serial
-        without raising a pickling error.
+        Verify that when a TopoFuncConstraint (with a named function)
+        is present, parallel mode executes successfully.
         """
         hfun = Hfun(self.raster_list, nprocs=2, hmin=10, hmax=1000)
         hfun.execution_mode = 'parallel'
 
-        # TopoFuncConstraint uses a lambda — not pickleable by default.
-        # The dispatcher should detect this and fall back to serial.
         hfun.add_topo_func_constraint(
-            func=lambda i: abs(i) / 2.0,
+            func=_default_topo_func,
             upper_bound=-10,
             value_type='min',
         )
 
-        # Should NOT raise PicklingError — falls back to serial and emits a warning
-        with self.assertWarns(UserWarning):
-            meshdata = hfun.meshdata()
+        meshdata = hfun.meshdata()
         
         self.assertIsNotNone(meshdata)
         self.assertTrue(len(meshdata.values) > 0)
+
+    def test_topo_func_constraint_rejects_lambda(self):
+        """
+        Verify that TopoFuncConstraint rejects lambdas.
+        """
+        hfun = Hfun(self.raster_list, nprocs=2, hmin=10, hmax=1000)
+        with self.assertRaises(ValueError):
+            hfun.add_topo_func_constraint(
+                func=lambda i: abs(i) / 2.0,
+                upper_bound=-10,
+                value_type='min',
+            )
 
 
     def test_mixed_raster_mesh_constraint_filtering(self):
@@ -669,6 +685,161 @@ class TestHfunCollectorExecution(unittest.TestCase):
         self.assertTrue(len(tasks) > 0)
         for task in tasks:
             self.assertEqual(task['worker_nprocs'], 1)
+
+
+    def test_serial_vs_parallel_contour_equivalence(self):
+        """
+        Verify that add_contour() produces equivalent results in
+        serial vs parallel modes.
+
+        Exercises: _apply_contours() -> _apply_shape_refinements()
+        """
+        nprocs = 2
+
+        # --- SERIAL ---
+        hfun_serial = Hfun(
+            self.raster_list, nprocs=nprocs, hmin=10, hmax=1000)
+        hfun_serial.add_contour(level=0, target_size=50, expansion_rate=0.01)
+
+        meshdata_serial = hfun_serial.meshdata()
+        values_serial = meshdata_serial.values
+
+        # --- PARALLEL ---
+        hfun_parallel = Hfun(
+            self.raster_list, nprocs=nprocs, hmin=10, hmax=1000)
+        hfun_parallel.execution_mode = 'parallel'
+        hfun_parallel.add_contour(level=0, target_size=50, expansion_rate=0.01)
+
+        meshdata_parallel = hfun_parallel.meshdata()
+        values_parallel = meshdata_parallel.values
+
+        self.assertAlmostEqual(
+            len(values_serial), len(values_parallel),
+            delta=len(values_serial) * 0.01)
+        npt.assert_allclose(
+            np.min(values_serial), np.min(values_parallel), rtol=1e-5)
+        npt.assert_allclose(
+            np.mean(values_serial), np.mean(values_parallel), rtol=1e-5)
+
+    def test_serial_vs_parallel_linefeature_equivalence(self):
+        """
+        Verify that add_feature() (line features) produces equivalent
+        results in serial vs parallel modes.
+
+        Exercises: _apply_linefeatures() -> _apply_linefeatures_parallel()
+        """
+        nprocs = 2
+        line = geometry.LineString([(0.2, 0.5), (0.8, 0.5)])
+
+        # --- SERIAL ---
+        hfun_serial = Hfun(
+            self.raster_list, nprocs=nprocs, hmin=10, hmax=1000)
+        hfun_serial.add_feature(
+            shape=line, target_size=50, expansion_rate=0.01)
+
+        meshdata_serial = hfun_serial.meshdata()
+        values_serial = meshdata_serial.values
+
+        # --- PARALLEL ---
+        hfun_parallel = Hfun(
+            self.raster_list, nprocs=nprocs, hmin=10, hmax=1000)
+        hfun_parallel.execution_mode = 'parallel'
+        hfun_parallel.add_feature(
+            shape=line, target_size=50, expansion_rate=0.01)
+
+        meshdata_parallel = hfun_parallel.meshdata()
+        values_parallel = meshdata_parallel.values
+
+        self.assertAlmostEqual(
+            len(values_serial), len(values_parallel),
+            delta=len(values_serial) * 0.01)
+        npt.assert_allclose(
+            np.min(values_serial), np.min(values_parallel), rtol=1e-5)
+        npt.assert_allclose(
+            np.mean(values_serial), np.mean(values_parallel), rtol=1e-5)
+
+    def test_add_courant_num_constraint_smoke(self):
+        """
+        Verify that add_courant_num_constraint() executes without error
+        and produces a valid size function in both serial and parallel modes.
+
+        Key point: CourantNumConstraint is always pickleable (no callables),
+        so it must work in parallel just like TopoConstConstraint.
+        """
+        for mode in ('serial', 'parallel'):
+            with self.subTest(mode=mode):
+                hfun = Hfun(
+                    self.raster_list, nprocs=2, hmin=10, hmax=1000)
+                hfun.execution_mode = mode
+                hfun.add_courant_num_constraint(
+                    upper_bound=0.9, timestep=150, wave_amplitude=2)
+
+                meshdata = hfun.meshdata()
+                self.assertIsNotNone(meshdata)
+                self.assertGreater(len(meshdata.values), 0)
+
+    def test_add_region_constraint_smoke(self):
+        """
+        Verify that add_region_constraint() executes without error
+        and produces a valid size function in both serial and parallel modes.
+
+        Key point: RegionConstraint is pickleable and must dispatch through
+        the same 'constraints' op key as other constraint types.
+        """
+        region = geometry.box(0.2, 0.2, 0.8, 0.8)
+
+        for mode in ('serial', 'parallel'):
+            with self.subTest(mode=mode):
+                hfun = Hfun(
+                    self.raster_list, nprocs=2, hmin=10, hmax=1000)
+                hfun.execution_mode = mode
+                hfun.add_region_constraint(
+                    value=50, shape=region, value_type='min')
+
+                meshdata = hfun.meshdata()
+                self.assertIsNotNone(meshdata)
+                self.assertGreater(len(meshdata.values), 0)
+
+    def test_worker_error_handling_returns_error_status(self):
+        """
+        Verify that all three worker functions that previously lacked
+        try/except now return {'status': 'error'} on failure instead
+        of raising an unhandled exception.
+
+        This guards against a regression of the bug where the coordinator's
+        failure-checking code (r['status'] == 'error') was dead code.
+        """
+
+        bad_path = '/nonexistent/path/that/does/not/exist.tif'
+        base_task = {
+            'original_index': 0,
+            'hfun_input_path': bad_path,
+            'topo_input_path': bad_path,
+            'output_path': str(self.tdir / 'out.tif'),
+            'global_hmin': 10,
+            'global_hmax': 1000,
+        }
+
+        # _flow_limiter_task_worker
+        result = _flow_limiter_task_worker(
+            {**base_task, 'limiter_params': []})
+        self.assertEqual(result['status'], 'error')
+        self.assertEqual(result['original_index'], 0)
+        self.assertIn('error', result)
+
+        # _const_val_task_worker
+        result = _const_val_task_worker(
+            {**base_task, 'const_val_rules': []})
+        self.assertEqual(result['status'], 'error')
+        self.assertEqual(result['original_index'], 0)
+        self.assertIn('error', result)
+
+        # _constraints_task_worker
+        result = _constraints_task_worker(
+            {**base_task, 'constraint_list': []})
+        self.assertEqual(result['status'], 'error')
+        self.assertEqual(result['original_index'], 0)
+        self.assertIn('error', result)
 
 
 if __name__ == '__main__':
